@@ -1,5 +1,5 @@
-const REST_API_URL = 'https://api.binance.com/api/v3';
-const SOCKET_URL = 'wss://stream.binance.com:9443/stream';
+const REST_API_URL = 'https://data-api.binance.vision/api/v3';
+const SOCKET_URL = 'wss://data-stream.binance.vision:9443/stream';
 const STREAM_SPEED = '100ms' as const;
 const DEPTH_LIMIT = 5000;
 const MAX_BUFFERED_DIFFS = 5000;

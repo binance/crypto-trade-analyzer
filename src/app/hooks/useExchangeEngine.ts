@@ -381,11 +381,11 @@ export function useExchangeEngine(params: {
   // Debounce and schedule cost recalculation
   const scheduleRecompute = useCallback((id: ExchangeId) => {
     if (pausedRef.current) return;
-
     if (recomputeTimers.current[id] != null) return;
+    calcStartedAtRef.current[id] = Date.now();
+
     recomputeTimers.current[id] = window.setTimeout(() => {
       recomputeTimers.current[id] = null;
-
       if (pausedRef.current) return;
       if (!selectedRef.current.includes(id)) return;
       if (!supportedSetRef.current.has(id)) return;
@@ -894,8 +894,6 @@ export function useExchangeEngine(params: {
         currentSelected.length >= 2 &&
         currentSelected.every((exId) => !!mapNow[exId] && !errorsNow[exId]);
 
-      if (!allSelectedReady) return;
-
       const rankedNow = calculateRankedExchanges(
         currentSelected,
         { ...costBreakdownMapRef.current, [id]: breakdown },
@@ -903,46 +901,48 @@ export function useExchangeEngine(params: {
         sideRef.current
       );
 
-      /* Compare Binance against the best alternative exchange and calculate the percentage difference. */
-      const BINANCE_ID = 'Binance' as ExchangeId;
-      const binanceSelected = currentSelected.includes(BINANCE_ID);
-      const binanceIdx = binanceSelected ? rankedNow.indexOf(BINANCE_ID) : -1;
-      const bestNow = rankedNow[0] ?? id;
-      const runnerUp = rankedNow[1];
+      if (allSelectedReady) {
+        /* Compare Binance against the best alternative exchange and calculate the percentage difference. */
+        const BINANCE_ID = 'Binance' as ExchangeId;
+        const binanceSelected = currentSelected.includes(BINANCE_ID);
+        const binanceIdx = binanceSelected ? rankedNow.indexOf(BINANCE_ID) : -1;
+        const bestNow = rankedNow[0] ?? id;
+        const runnerUp = rankedNow[1];
 
-      let comparator: ExchangeId | undefined;
-      if (binanceIdx >= 0) comparator = binanceIdx === 0 ? runnerUp : bestNow;
+        let comparator: ExchangeId | undefined;
+        if (binanceIdx >= 0) comparator = binanceIdx === 0 ? runnerUp : bestNow;
 
-      let binanceVsComparatorPct = 0;
-      if (binanceSelected && comparator) {
-        const isBuy = side === 'buy';
-        const map = { ...costBreakdownMapRef.current, [id]: breakdown };
-        const binanceBreakdown = map[BINANCE_ID];
-        const comparatorBreakdown = map[comparator];
-        if (binanceBreakdown && comparatorBreakdown) {
-          const savings = calculateSavings(
-            binanceBreakdown,
-            comparatorBreakdown,
-            isBuy,
-            base.toUpperCase(),
-            quote.toUpperCase()
-          );
-          binanceVsComparatorPct = bestNow === BINANCE_ID ? savings.pct : -savings.pct;
+        let binanceVsComparatorPct = 0;
+        if (binanceSelected && comparator) {
+          const isBuy = side === 'buy';
+          const map = { ...costBreakdownMapRef.current, [id]: breakdown };
+          const binanceBreakdown = map[BINANCE_ID];
+          const comparatorBreakdown = map[comparator];
+          if (binanceBreakdown && comparatorBreakdown) {
+            const savings = calculateSavings(
+              binanceBreakdown,
+              comparatorBreakdown,
+              isBuy,
+              base.toUpperCase(),
+              quote.toUpperCase()
+            );
+            binanceVsComparatorPct = bestNow === BINANCE_ID ? savings.pct : -savings.pct;
+          }
         }
-      }
 
-      evtCalcPerformed({
-        tradingPair: tradingPairRef.current,
-        side: sideRef.current,
-        quantity: sizeRef.current,
-        sizeAsset: sizeAssetRef.current === 'base' ? base : quote,
-        selectedExchanges: currentSelected,
-        bestExchange: bestNow,
-        bestExchangeAccountPrefs: JSON.stringify(settingsRef.current[bestNow] || {}),
-        binanceRank: binanceIdx >= 0 ? binanceIdx + 1 : -1,
-        binanceComparator: comparator,
-        binanceVsComparatorPct: binanceVsComparatorPct * 100,
-      });
+        evtCalcPerformed({
+          tradingPair: tradingPairRef.current,
+          side: sideRef.current,
+          quantity: sizeRef.current,
+          sizeAsset: sizeAssetRef.current === 'base' ? base : quote,
+          selectedExchanges: currentSelected,
+          bestExchange: bestNow,
+          bestExchangeAccountPrefs: JSON.stringify(settingsRef.current[bestNow] || {}),
+          binanceRank: binanceIdx >= 0 ? binanceIdx + 1 : -1,
+          binanceComparator: comparator,
+          binanceVsComparatorPct: binanceVsComparatorPct * 100,
+        });
+      }
     } catch (e: unknown) {
       console.warn(`Failed to calculate cost for ${id}:`, e);
       setCostBreakdownMap((prev) => ({ ...prev, [id]: undefined }));
