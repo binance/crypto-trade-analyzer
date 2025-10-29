@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" sizes="any" href="/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Crypto Trade Analyzer: Compare Exchange Fees</title>
+    <meta
+      name="description"
+      content="Compare crypto exchange fees and returns instantly. Use our Trade Analyzer to find the most cost-efficient platform for your trades."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Crypto Trade Analyzer" />
+    <meta property="og:title" content="Crypto Trade Analyzer: Compare Exchange Fees" />
+    <meta
+      property="og:description"
+      content="Compare crypto exchange fees and returns instantly. Use our Trade Analyzer to find the most cost-efficient platform for your trades."
+    />
+    <meta property="og:url" content="https://binance.github.io/crypto-trade-analyzer" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Crypto Trade Analyzer: Compare Exchange Fees" />
+    <meta
+      name="twitter:description"
+      content="Compare crypto exchange fees and returns instantly. Use our Trade Analyzer to find the most cost-efficient platform for your trades."
+    />
+
+    <link rel="canonical" href="https://binance.github.io/crypto-trade-analyzer" />
+    <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
+    <link rel="preconnect" href="https://www.google-analytics.com" crossorigin />
+
+    <script>
+      (function () {
+        const darkMode = window.matchMedia('(prefers-color-scheme: dark)');
+        const apply = (mode) => {
+          const dark = mode === 'dark' || (mode === 'system' && darkMode.matches);
+          document.documentElement.classList.toggle('dark', dark);
+        };
+
+        const cachedTheme = localStorage.getItem('theme') || 'system';
+        apply(cachedTheme);
+
+        darkMode.addEventListener?.('change', () => {
+          if ((localStorage.getItem('theme') || 'system') === 'system') apply('system');
+        });
+
+        window.setTheme = (mode) => {
+          localStorage.setItem('theme', mode);
+          apply(mode);
+        };
+      })();
+    </script>
+
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+
+      gtag('consent', 'default', {
+        ad_storage: 'denied',
+        analytics_storage: 'denied',
+        ad_user_data: 'denied',
+        ad_personalization: 'denied',
+        wait_for_update: 500,
+      });
+    </script>
+
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-1ZBQ6G2N2F"></script>
+
+    <script>
+      gtag('js', new Date());
+      gtag('config', 'G-1ZBQ6G2N2F');
+    </script>
+
+    <style>
+      body {
+        background: #ffffff;
+        color: #18181b;
+      }
+      html.dark body {
+        background: #09090b;
+        color: #f4f4f5;
+      }
+    </style>
+  </head>
+  <body class="antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

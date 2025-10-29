@@ -1,0 +1,184 @@
+            Binance Source-Available and Non-Commercial License Version 1.0
+
+Copyright (c) 2025 Binance and affiliates
+All rights reserved.
+
+This Binance Source-Available and Non-Commercial License Version 1.0 (this “License”) sets 
+forth the terms on which Binance and/or its affiliates make available the Licensed Material as 
+defined below. By installing, downloading, accessing, using, modifying, distributing, or otherwise 
+utilizing any of the Licensed Material, you agree to the terms and conditions of this License.
+
+This License is supplemental to, forms part of and is subject to the Binance Terms of Use 
+(https://www.binance.com/en/terms) (as updated and amended from time to time, the “Binance Terms 
+of Use”) and the Crypto Trade Analyzer Terms of Use (https://github.com/binance/crypto-trade-analyzer/TERMS_OF_USE.md). 
+Capitalised terms used in this License but not defined shall have the same meaning as in the 
+Binance Terms of Use and the Crypto Trade Analyzer Terms of Use.  In the event of any conflict or 
+inconsistency between this License, the Binance Terms of Use, and the Crypto Trade Analyzer Terms of Use, 
+this License shall prevail with respect to the license granted hereunder, unless expressly stated otherwise.
+
+1.    Definition
+
+1.1   “Commercial Use” means any use, utilization, modification, distribution, or other 
+      exploitation of the Licensed Material or any part of it for the purposes of generating 
+      revenue or for monetary or other commercial gain, directly or indirectly, including but not 
+      limited to:
+
+      (a)   selling or commercially licensing or distributing the Licensed Material,
+      (b)   using the Licensed Material to provide paid services or products, including 
+            bundling with paid services or products,
+      (c)   including the Licensed Material in a product or service that is offered for sale or 
+            generates revenue directly or indirectly,
+      (d)   creating modification or derivative work that is offered for sale or generates 
+            revenue directly or indirectly, or
+      (e)   using the Licensed Material in any manner that results in financial benefit, 
+            including but not limited to advertising, data monetization, or commercial 
+            research.
+
+1.2	“Derivative Work” means any software, code, documentation, or any other material that 
+      is derived from or based upon the Licensed Material.
+
+1.3	“Derivative Work License” means the license the Licensee applies to his/her copyright 
+      and other applicable rights in his/her contributions to the Derivative Work.
+
+1.4	“Licensed Material” means this software, source and objective codes, documentation, 
+      and other material to which this License applies.
+
+1.5	“Licensee” means you, an individual, or the entity on whose behalf you are receiving 
+      the Licensed Material. 
+
+1.6	“Licensor” means Binance and/or its affiliates granting rights under this License.
+
+1.7	“Third-Party Component” means third-party library and code that are made available to 
+      the Licensor under the MIT License or the ISC License (as applicable).
+
+2.	Grant of Rights
+
+2.1	Subject to the terms and conditions of this License, the Licensee is hereby granted a 
+      limited, royalty-free, non-exclusive, non-transferable, non-sublicensable license to: (a) 
+      use, copy, or distribute the Licensed Material; and (b) create and produce the Derivative 
+      Work, in each case solely for non-commercial purposes.
+
+2.2	Commercial Use of the Licensed Material is strictly prohibited without express prior 
+      written permission from the Licensor.  For avoidance of doubt, the prohibition of 
+      Commercial Use does not apply to any Third-Party Components.
+
+2.3	Licensee shall not sublicense, assign, or otherwise transfer any rights granted under this 
+      License to any third party, except as expressly permitted herein.
+
+3.	Conditions
+
+Licensee’s rights and license granted under this License are subject to the following conditions:
+
+3.1	On each copy of the Licensed Material, the Licensee shall reproduce and not remove or 
+      alter all Binance copyright or other proprietary notices contained in the Licensed 
+      Material, and Licensee must include the text of this License.
+
+3.2	If the Licensee creates, develops, products, shares, publishes, distributes or otherwise 
+      makes available any Derivative Work, the following conditions also apply:
+
+      (a)	The Derivative Work must be licensed under this exact License, including without 
+            limitation to the restriction on Commercial Use; and
+      (b)	The Licensee must include the text of, or the URI or hyperlink to, the applicable 
+            Derivative Work License. 
+
+3.3	Licensee must retain copyright notices and give appropriate credit to the Licensor in all 
+      copies or substantial portions of the Licensed Material and any Derivative Work, in a 
+      manner reasonably visible to users. 
+
+4.	No Other Rights
+
+4.1	All rights not expressly granted to Licensee are reserved by Licensor.	
+
+4.2	Except as expressly specified in Section 2 of this license, nothing in this license shall be 
+      deemed to grant you, by implication, estoppel or otherwise, license, ownership or any 
+      other rights.
+
+5.	Term and Termination
+
+5.1	This License will continue unless and until earlier terminated as set forth herein. If 
+      Licensee breaches any of its conditions or obligations under this Agreement, this 
+      Agreement will terminate automatically and the License will terminate automatically and 
+      permanently.
+
+5.2	The Licensor may also offer the Licensed Material under separate terms or conditions or 
+      stop distributing or making available the Licensed Material at any time.
+
+5.3	Upon termination, Licensee must immediately cease all use, distribution, and 
+      reproduction of the Licensed Material and destroy all copies in Licensee’s possession or 
+      control.
+
+6.	Disclaimer
+
+      THE LICENSED MATERIAL IS PROVIDED “AS IS” AND “AS AVAILABLE”, WITHOUT 
+      WARRANTY OF ANY KIND, EXPRESS, IMPLIED, STATUTORY, OR OTHER, 
+      INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+      FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, ABSENCE OF 
+      LATENT OR OTHER DEFECTS, ACCURACY, OR THE PRESENCE OR ABSENCE OF 
+      ERRORS, WHETHER OR NOT KNOWN OR DISCOVERABLE.
+
+7.	Limitation of Liability 
+
+      IN NO EVENT SHALL THE LICENSOR, AUTHORS OR COPYRIGHT HOLDERS OF 
+      THE LICENSED MATERIAL BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER 
+      LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, 
+      ARISING FROM, OUT OF, OR IN CONNECTION WITH THE LICENSED MATERIAL OR 
+      THE USE OR OTHER DEALINGS IN THE LICENSED MATERIAL, EVEN IF THE 
+      LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH LOSSES, COSTS, 
+      EXPENSES, OR DAMAGES.
+
+8.	Third-Party Components
+
+      The Licensed Material contains Third-Party Components licensed under, and remains 
+      governed by, the MIT License or the ISC License, as applicable, and the Licensee must 
+      include the full text of the applicable third party license(s) (e.g. MIT License, ISC 
+      License) in any onward distribution of the Licensed Material or any Derivative Work that 
+      incorporates such Third-Party Components. The required license text(s) are set out in 
+      the Appendix to this License.
+
+9.	Governing Law
+	
+      This License shall be governed by, and construed in accordance with, the laws of the 
+      Hong Kong Special Administrative Region, without regard to its conflict of law principles.
+
+
+
+
+                  APPENDIX: THIRD-PARTY LICENSES
+
+MIT License
+
+Copyright (c) [year] [copyright holder]
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software 
+and associated documentation files (the "Software"), to deal in the Software without restriction, 
+including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, 
+and/or sell copies of the Software, and to permit persons to whom the Software is furnished to 
+do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or 
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS 
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF 
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY 
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT 
+OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+ISC License
+
+Copyright <YEAR> <OWNER>
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without 
+fee is hereby granted, provided that the above copyright notice and this permission notice 
+appear in all copies.
+
+THE SOFTWARE IS PROVIDED “AS IS” AND THE AUTHOR DISCLAIMS ALL WARRANTIES 
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF 
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR 
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN 
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF 
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

@@ -1,0 +1,254 @@
+{
+  "exchange": "Binance",
+  "version": "2025-08-22",
+  "userTiers": [
+    "Regular User",
+    "VIP1",
+    "VIP2",
+    "VIP3",
+    "VIP4",
+    "VIP5",
+    "VIP6",
+    "VIP7",
+    "VIP8",
+    "VIP9"
+  ],
+  "supportsTokenDiscount": true,
+  "schedule": {
+    "name": "default",
+    "defaultTier": "Regular User",
+    "tiers": {
+      "Regular User": {
+        "maker": 0.001,
+        "taker": 0.001
+      },
+      "VIP1": {
+        "maker": 0.0009,
+        "taker": 0.001
+      },
+      "VIP2": {
+        "maker": 0.0008,
+        "taker": 0.001
+      },
+      "VIP3": {
+        "maker": 0.0004,
+        "taker": 0.0006
+      },
+      "VIP4": {
+        "maker": 0.0004,
+        "taker": 0.00052
+      },
+      "VIP5": {
+        "maker": 0.00025,
+        "taker": 0.00031
+      },
+      "VIP6": {
+        "maker": 0.0002,
+        "taker": 0.00029
+      },
+      "VIP7": {
+        "maker": 0.00019,
+        "taker": 0.00028
+      },
+      "VIP8": {
+        "maker": 0.00016,
+        "taker": 0.00025
+      },
+      "VIP9": {
+        "maker": 0.00011,
+        "taker": 0.00023
+      }
+    }
+  },
+  "modifiers": [
+    {
+      "id": "USDC pair fee",
+      "match": {
+        "quoteAssets": ["USDC"],
+        "exec": ["taker"]
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "Regular User": {
+            "taker": 0.00095
+          },
+          "VIP1": {
+            "taker": 0.00095
+          },
+          "VIP2": {
+            "taker": 0.00095
+          },
+          "VIP3": {
+            "taker": 0.00055
+          },
+          "VIP4": {
+            "taker": 0.00047
+          },
+          "VIP5": {
+            "taker": 0.00026
+          },
+          "VIP6": {
+            "taker": 0.00024
+          },
+          "VIP7": {
+            "taker": 0.00023
+          },
+          "VIP8": {
+            "taker": 0.0002
+          },
+          "VIP9": {
+            "taker": 0.00018
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": true,
+        "withOtherModifiers": true,
+        "exclusive": false
+      }
+    },
+    {
+      "id": "EUR pair fee",
+      "match": {
+        "quoteAssets": ["EUR"],
+        "exec": ["taker"]
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "Regular User": {
+            "taker": 0.00095
+          },
+          "VIP1": {
+            "taker": 0.00095
+          },
+          "VIP2": {
+            "taker": 0.00095
+          },
+          "VIP3": {
+            "taker": 0.00055
+          },
+          "VIP4": {
+            "taker": 0.00047
+          },
+          "VIP5": {
+            "taker": 0.00026
+          },
+          "VIP6": {
+            "taker": 0.00024
+          },
+          "VIP7": {
+            "taker": 0.00023
+          },
+          "VIP8": {
+            "taker": 0.0002
+          },
+          "VIP9": {
+            "taker": 0.00018
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": true,
+        "withOtherModifiers": true,
+        "exclusive": false
+      }
+    },
+    {
+      "id": "FDUSD pair fee",
+      "match": {
+        "pairsRegex": "^(BTC|BNB|DOGE|ETH|LINK|SOL|XRP)/FDUSD$"
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "Regular User": {
+            "maker": 0,
+            "taker": 0.001
+          },
+          "VIP1": {
+            "maker": 0,
+            "taker": 0.001
+          },
+          "VIP2": {
+            "maker": 0,
+            "taker": 0
+          },
+          "VIP3": {
+            "maker": 0,
+            "taker": 0
+          },
+          "VIP4": {
+            "maker": 0,
+            "taker": 0
+          },
+          "VIP5": {
+            "maker": 0,
+            "taker": 0
+          },
+          "VIP6": {
+            "maker": 0,
+            "taker": 0
+          },
+          "VIP7": {
+            "maker": 0,
+            "taker": 0
+          },
+          "VIP8": {
+            "maker": 0,
+            "taker": 0
+          },
+          "VIP9": {
+            "maker": 0,
+            "taker": 0
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": true,
+        "withOtherModifiers": false,
+        "exclusive": true
+      }
+    },
+    {
+      "id": "zero fee pair",
+      "match": {
+        "pairs": [
+          "FDUSD/USDT",
+          "AEUR/USDT",
+          "BFUSD/USDC",
+          "BFUSD/USDT",
+          "EUR/EURI",
+          "EURI/USDT",
+          "FDUSD/USDC",
+          "TUSD/USDT",
+          "USDC/USDT",
+          "USDP/USDT",
+          "XUSD/USDT"
+        ]
+      },
+      "effect": {
+        "mode": "override",
+        "maker": 0,
+        "taker": 0
+      },
+      "stacking": {
+        "withDiscounts": false,
+        "withOtherModifiers": false,
+        "exclusive": true
+      }
+    }
+  ],
+  "tokenDiscount": {
+    "id": "BNB commission 25% discount",
+    "label": "Pay fee in BNB",
+    "type": "percentage",
+    "value": 0.25,
+    "requires": {
+      "feeAsset": "BNB"
+    },
+    "appliesTo": ["maker", "taker"],
+    "order": "after_modifiers"
+  }
+}
