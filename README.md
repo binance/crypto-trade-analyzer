@@ -1,6 +1,6 @@
 # Crypto Trade Analyzer
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/binance/crypto-trade-analyzer/pages.yaml)](https://github.com/binance/crypto-trade-analyzer/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/binance/crypto-trade-analyzer/pages.yml)](https://github.com/binance/crypto-trade-analyzer/actions)
 ![License](https://img.shields.io/badge/license-Binance%20Source--Available%20v1.0-8854d0)
 [![Open Issues](https://img.shields.io/github/issues/binance/crypto-trade-analyzer)](https://github.com/binance/crypto-trade-analyzer/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/binance/crypto-trade-analyzer?style=social)](https://github.com/binance/crypto-trade-analyzer/stargazers)
