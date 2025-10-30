@@ -20,7 +20,6 @@ import {
   evtExchangeSessionStart,
   evtExchangeSessionEnd,
   evtExchangeSessionSummary,
-  sendEvent,
 } from '../../utils/analytics';
 
 /**
@@ -237,28 +236,11 @@ export function useExchangeEngine(params: {
    *
    * @param id - The unique identifier of the exchange
    * @param reason - The reason for ending the session
-   * @param final - Whether this is a final session end (affects event sending behavior)
-   *
-   * @remarks
-   * This function calculates session metrics including:
-   * - Total session duration
-   * - Accumulated downtime during the session
-   * - Uptime ratio (uptime / total time)
-   *
-   * If no session start time is found, it will only send the session end event.
-   * The function handles ongoing downtime by adding the current downtime period
-   * to the accumulated downtime before calculating metrics.
-   *
-   * When `final` is true, events are sent with persistence flag enabled.
-   * When `final` is false, events are sent through the standard event handlers.
-   *
-   * After processing, the session state is reset for the given exchange.
    */
-  const endSessionWithSummary = (id: ExchangeId, reason: string, final: boolean = false) => {
+  const endSessionWithSummary = (id: ExchangeId, reason: string) => {
     const start = sessionStartRef.current[id];
     if (!start) {
-      if (final) sendEvent('exchange_session_end', { exchange: id, reason, ts: Date.now() }, true);
-      else evtExchangeSessionEnd(id, reason);
+      evtExchangeSessionEnd(id, reason);
       return;
     }
 
@@ -281,19 +263,14 @@ export function useExchangeEngine(params: {
       ts: Date.now(),
     };
 
-    if (final) {
-      sendEvent('exchange_session_summary', payload, true);
-      sendEvent('exchange_session_end', { exchange: id, reason, ts: Date.now() }, true);
-    } else {
-      evtExchangeSessionSummary({
-        exchange: payload.exchange,
-        total_ms: payload.total_ms,
-        downtime_ms: payload.downtime_ms,
-        uptime_ratio: payload.uptime_ratio,
-        reason,
-      });
-      evtExchangeSessionEnd(id, reason);
-    }
+    evtExchangeSessionSummary({
+      exchange: payload.exchange,
+      total_ms: payload.total_ms,
+      downtime_ms: payload.downtime_ms,
+      uptime_ratio: payload.uptime_ratio,
+      reason,
+    });
+    evtExchangeSessionEnd(id, reason);
 
     sessionStartRef.current[id] = undefined;
     sessionDowntimeAccRef.current[id] = 0;
@@ -541,21 +518,28 @@ export function useExchangeEngine(params: {
     [bumpSeq, clearState, enqueueWatchOperation, unwatchWithPairKey]
   );
 
-  /**
-   * Calculates the trading cost for a specific exchange based on the current order book,
-   * user settings, and order parameters.
-   */
+  // ON PAGE EXIT → flush all sessions
   useEffect(() => {
     const flushAll = (reason: string) => {
       if (hasFlushedOnExitRef.current) return;
       hasFlushedOnExitRef.current = true;
       selectedRef.current.forEach((id) => {
-        if (sessionStartRef.current[id]) endSessionWithSummary(id, reason, true);
+        if (sessionStartRef.current[id]) endSessionWithSummary(id, reason);
       });
     };
 
-    const onPageHide = () => flushAll('pagehide');
-    const onBeforeUnload = () => flushAll('beforeunload');
+    const onPageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) {
+        flushAll('pagehide');
+        event.preventDefault();
+      }
+    };
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      flushAll('beforeunload');
+      event.preventDefault();
+      event.returnValue = '';
+    };
 
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('beforeunload', onBeforeUnload);

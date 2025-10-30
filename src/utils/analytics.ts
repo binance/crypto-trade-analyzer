@@ -127,13 +127,12 @@ function hasGA(): boolean {
  *
  * @param name - The name of the event to send.
  * @param props - Optional properties to include with the event.
- * @param final - If `true`, adds `transport_type: 'beacon'` to the event properties for reliable delivery.
  */
-export function sendEvent(name: string, props?: Record<string, unknown>, final: boolean = false) {
+export function sendEvent(name: string, props?: Record<string, unknown>) {
   if (!isAnalyticsEnabled() || !hasGA()) return;
   const win = window as GA4Window;
   if (typeof win.gtag === 'function') {
-    const eventProps = !final ? props || {} : { ...(props || {}), transport_type: 'beacon' };
+    const eventProps = { ...(props || {}) };
     win.gtag('event', name, eventProps);
   }
 }
