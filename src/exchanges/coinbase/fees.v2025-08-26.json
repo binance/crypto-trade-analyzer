@@ -1,0 +1,140 @@
+{
+  "exchange": "Coinbase",
+  "version": "2025-08-26",
+  "userTiers": [
+    "$0K-$10K",
+    "$10K-$50K",
+    "$50K-$100K",
+    "$100K-$1M",
+    "$1M-$15M",
+    "$15M-$75M",
+    "$75M-$250M",
+    "$250M-$400M",
+    "$400M+",
+    "Stable Tier 1",
+    "Stable Tier 2",
+    "Stable Tier 3",
+    "Stable Tier 4"
+  ],
+  "supportsTokenDiscount": false,
+  "schedule": {
+    "name": "default",
+    "defaultTier": "$0K-$10K",
+    "tiers": {
+      "$0K-$10K": {
+        "maker": 0.004,
+        "taker": 0.006
+      },
+      "$10K-$50K": {
+        "maker": 0.0025,
+        "taker": 0.004
+      },
+      "$50K-$100K": {
+        "maker": 0.0015,
+        "taker": 0.0025
+      },
+      "$100K-$1M": {
+        "maker": 0.001,
+        "taker": 0.002
+      },
+      "$1M-$15M": {
+        "maker": 0.0008,
+        "taker": 0.0018
+      },
+      "$15M-$75M": {
+        "maker": 0.0006,
+        "taker": 0.0016
+      },
+      "$75M-$250M": {
+        "maker": 0.0003,
+        "taker": 0.0012
+      },
+      "$250M-$400M": {
+        "maker": 0,
+        "taker": 0.0008
+      },
+      "$400M+": {
+        "maker": 0,
+        "taker": 0.0005
+      },
+      "Stable Tier 1": {
+        "maker": 0.004,
+        "taker": 0.006
+      },
+      "Stable Tier 2": {
+        "maker": 0.004,
+        "taker": 0.006
+      },
+      "Stable Tier 3": {
+        "maker": 0.004,
+        "taker": 0.006
+      },
+      "Stable Tier 4": {
+        "maker": 0.004,
+        "taker": 0.006
+      }
+    }
+  },
+  "modifiers": [
+    {
+      "id": "stable pair fee",
+      "match": {
+        "pairsRegex": "^(?:(?:(?!(?:USDT\\/USDC|USDC\\/USDT))(?:USDC|USDT|DAI|PYUSD|EURC)\\/(?:USDC|USDT|DAI|PYUSD|EURC))|WBTC\\/BTC|BTC\\/WBTC|cbETH\\/ETH|ETH\\/cbETH)$",
+        "tiers": ["Stable Tier 1", "Stable Tier 2", "Stable Tier 3", "Stable Tier 4"]
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "Stable Tier 1": {
+            "maker": 0,
+            "taker": 0.00001
+          },
+          "Stable Tier 2": {
+            "maker": 0,
+            "taker": 0.000015
+          },
+          "Stable Tier 3": {
+            "maker": 0,
+            "taker": 0.00002
+          },
+          "Stable Tier 4": {
+            "maker": 0,
+            "taker": 0.00003
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": false,
+        "withOtherModifiers": false,
+        "exclusive": true
+      }
+    },
+    {
+      "id": "stable pair fee",
+      "match": {
+        "pairsRegex": "^(?:(?:(?!(?:USDT\\/USDC|USDC\\/USDT))(?:USDC|USDT|DAI|PYUSD|EURC)\\/(?:USDC|USDT|DAI|PYUSD|EURC))|WBTC\\/BTC|BTC\\/WBTC|cbETH\\/ETH|ETH\\/cbETH)$",
+        "tiers": [
+          "$0K-$10K",
+          "$10K-$50K",
+          "$50K-$100K",
+          "$100K-$1M",
+          "$1M-$15M",
+          "$15M-$75M",
+          "$75M-$250M",
+          "$250M-$400M",
+          "$400M+"
+        ]
+      },
+      "effect": {
+        "mode": "override",
+        "maker": 0,
+        "taker": 0.000045
+      },
+      "stacking": {
+        "withDiscounts": false,
+        "withOtherModifiers": false,
+        "exclusive": true
+      }
+    }
+  ]
+}

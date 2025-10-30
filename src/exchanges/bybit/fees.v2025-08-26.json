@@ -1,0 +1,148 @@
+{
+  "exchange": "Bybit",
+  "version": "2025-08-26",
+  "userTiers": [
+    "VIP0",
+    "VIP1",
+    "VIP2",
+    "VIP3",
+    "VIP4",
+    "VIP5",
+    "Supreme VIP",
+    "PRO1",
+    "PRO2",
+    "PRO3",
+    "PRO4",
+    "PRO5",
+    "PRO6"
+  ],
+  "supportsTokenDiscount": false,
+  "schedule": {
+    "name": "default",
+    "defaultTier": "VIP0",
+    "tiers": {
+      "VIP0": {
+        "maker": 0.001,
+        "taker": 0.001
+      },
+      "VIP1": {
+        "maker": 0.000675,
+        "taker": 0.0008
+      },
+      "VIP2": {
+        "maker": 0.00065,
+        "taker": 0.000775
+      },
+      "VIP3": {
+        "maker": 0.000625,
+        "taker": 0.00075
+      },
+      "VIP4": {
+        "maker": 0.0005,
+        "taker": 0.0006
+      },
+      "VIP5": {
+        "maker": 0.0004,
+        "taker": 0.0005
+      },
+      "Supreme VIP": {
+        "maker": 0.0003,
+        "taker": 0.00045
+      },
+      "PRO1": {
+        "maker": 0.0004,
+        "taker": 0.0006
+      },
+      "PRO2": {
+        "maker": 0.0003,
+        "taker": 0.0005
+      },
+      "PRO3": {
+        "maker": 0.0002,
+        "taker": 0.0004
+      },
+      "PRO4": {
+        "maker": 0.00015,
+        "taker": 0.0003
+      },
+      "PRO5": {
+        "maker": 0.0001,
+        "taker": 0.0002
+      },
+      "PRO6": {
+        "maker": 0.00005,
+        "taker": 0.00015
+      }
+    }
+  },
+  "modifiers": [
+    {
+      "id": "Fiat-Crypto pair fee",
+      "match": {
+        "pairsRegex": "^(?:[A-Z0-9]+\\/(?:EUR|USD|GBP|BRL|TRY)|(?:EUR|USD|GBP|BRL|TRY)\\/[A-Z0-9]+)$"
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "VIP0": {
+            "maker": 0.0015,
+            "taker": 0.002
+          },
+          "VIP1": {
+            "maker": 0.001,
+            "taker": 0.000675
+          },
+          "VIP2": {
+            "maker": 0.000775,
+            "taker": 0.00065
+          },
+          "VIP3": {
+            "maker": 0.00075,
+            "taker": 0.000625
+          },
+          "VIP4": {
+            "maker": 0.0006,
+            "taker": 0.0005
+          },
+          "VIP5": {
+            "maker": 0.0005,
+            "taker": 0.0004
+          },
+          "Supreme VIP": {
+            "maker": 0.00045,
+            "taker": 0.0003
+          },
+          "PRO1": {
+            "maker": 0.0005,
+            "taker": 0.0006
+          },
+          "PRO2": {
+            "maker": 0.0004,
+            "taker": 0.0005
+          },
+          "PRO3": {
+            "maker": 0.0003,
+            "taker": 0.00045
+          },
+          "PRO4": {
+            "maker": 0.0003,
+            "taker": 0.0004
+          },
+          "PRO5": {
+            "maker": 0.00005,
+            "taker": 0.00015
+          },
+          "PRO6": {
+            "maker": 0.00005,
+            "taker": 0.00015
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": true,
+        "withOtherModifiers": true,
+        "exclusive": false
+      }
+    }
+  ]
+}
