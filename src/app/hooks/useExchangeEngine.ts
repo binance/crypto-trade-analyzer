@@ -921,7 +921,7 @@ export function useExchangeEngine(params: {
           sizeAsset: sizeAssetRef.current === 'base' ? base : quote,
           selectedExchanges: currentSelected,
           bestExchange: bestNow,
-          bestExchangeAccountPrefs: JSON.stringify(settingsRef.current[bestNow] || {}),
+          bestExchangeAccountPrefs: settingsRef.current[bestNow] || {},
           binanceRank: binanceIdx >= 0 ? binanceIdx + 1 : -1,
           binanceComparator: comparator,
           binanceVsComparatorPct: binanceVsComparatorPct * 100,

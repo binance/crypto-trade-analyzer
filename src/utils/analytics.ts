@@ -1,5 +1,6 @@
 import { GA4_ANALYTICS_CONSENT_KEY } from './constants';
 import type { OrderSide } from '../core/interfaces/order-book';
+import type { PerExchangeSettings } from '../app/types';
 
 type GA4Window = Window & {
   doNotTrack?: string;
@@ -182,7 +183,7 @@ export function evtCalcPerformed(params: {
   sizeAsset: string;
   selectedExchanges: string[];
   bestExchange: string;
-  bestExchangeAccountPrefs?: string;
+  bestExchangeAccountPrefs?: PerExchangeSettings | object;
   binanceRank?: number;
   binanceComparator?: string;
   binanceVsComparatorPct?: number;
@@ -193,11 +194,27 @@ export function evtCalcPerformed(params: {
     quantity: params.quantity,
     size_asset: params.sizeAsset,
     selected_exchanges: params.selectedExchanges.join(','),
+    selected_exchanges_count: params.selectedExchanges.length || 0,
     best_exchange: params.bestExchange,
-    best_exchange_account_prefs: params.bestExchangeAccountPrefs || '',
+    best_exchange_user_tier:
+      params.bestExchangeAccountPrefs && 'userTier' in params.bestExchangeAccountPrefs
+        ? params.bestExchangeAccountPrefs.userTier
+        : '',
+    best_exchange_token_discount:
+      params.bestExchangeAccountPrefs && 'tokenDiscount' in params.bestExchangeAccountPrefs
+        ? params.bestExchangeAccountPrefs.tokenDiscount
+          ? 1
+          : 0
+        : 0,
+    best_exchange_custom_fees:
+      params.bestExchangeAccountPrefs && 'customFees' in params.bestExchangeAccountPrefs
+        ? params.bestExchangeAccountPrefs.customFees
+          ? params.bestExchangeAccountPrefs.customFees
+          : 0
+        : 0,
     binance_rank: params.binanceRank ?? -1,
     binance_comparator: params.binanceComparator || '',
-    binance_vs_comparator_pct: params.binanceVsComparatorPct ?? 0,
+    binance_vs_comparator_pct: Math.round((params.binanceVsComparatorPct ?? 0) * 10000) / 10000,
     ts: Date.now(),
   };
   sendEvent('calc_performed', p);
@@ -233,7 +250,11 @@ export function evtCalcLatencyMs(exchange: string, ms: number) {
               ? '500-1000'
               : '>=1000';
 
-  sendEvent('calc_latency', { exchange, ms, bucket });
+  sendEvent('calc_latency', {
+    exchange,
+    calc_latency_ms: Math.floor(ms),
+    calc_latency_bucket: bucket,
+  });
 }
 
 /**
@@ -264,7 +285,11 @@ export function evtOrderbookPushLatencyMs(exchange: string, ms: number) {
               ? '500-1000'
               : '>=1000';
 
-  sendEvent('orderbook_push_latency', { exchange, ms, bucket });
+  sendEvent('orderbook_push_latency', {
+    exchange,
+    order_book_latency_ms: Math.floor(ms),
+    order_book_latency_bucket: bucket,
+  });
 }
 
 /**
