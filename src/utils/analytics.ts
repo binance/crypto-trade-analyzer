@@ -171,7 +171,8 @@ export function evtExchangesSelected(exchanges: string[]) {
  * @param params.bestExchangeAccountPrefs - (Optional) Account preferences for the best exchange.
  * @param params.binanceRank - (Optional) The rank of Binance among selected exchanges.
  * @param params.binanceComparator - (Optional) The exchange used as a comparator for Binance.
- * @param params.binanceVsComparatorPct - (Optional) Percentage difference between Binance and the comparator exchange.
+ * @param params.binanceWinningPct - (Optional) The winning percentage of Binance.
+ * @param params.binanceLosingPct - (Optional) The losing percentage of Binance.
  *
  * @remarks
  * This function transforms the input parameters, adds a timestamp, and sends an event named 'calc_performed'.
@@ -186,7 +187,8 @@ export function evtCalcPerformed(params: {
   bestExchangeAccountPrefs?: PerExchangeSettings | object;
   binanceRank?: number;
   binanceComparator?: string;
-  binanceVsComparatorPct?: number;
+  binanceWinningPct?: number;
+  binanceLosingPct?: number;
 }) {
   const p = {
     trading_pair: params.tradingPair,
@@ -214,7 +216,8 @@ export function evtCalcPerformed(params: {
         : 0,
     binance_rank: params.binanceRank ?? -1,
     binance_comparator: params.binanceComparator || '',
-    binance_vs_comparator_pct: Math.round((params.binanceVsComparatorPct ?? 0) * 10000) / 10000,
+    binance_winning_pct: params.binanceWinningPct ?? 0,
+    binance_losing_pct: params.binanceLosingPct ?? 0,
     ts: Date.now(),
   };
   sendEvent('calc_performed', p);
@@ -237,6 +240,9 @@ export function evtCalcPerformed(params: {
  * The event is sent with the name 'calc_latency' and includes the exchange, latency value, and bucket.
  */
 export function evtCalcLatencyMs(exchange: string, ms: number) {
+  const hidden = typeof document !== 'undefined' && document.hidden;
+  if (hidden) return;
+
   const bucket =
     ms < 50
       ? '<50'
@@ -272,6 +278,9 @@ export function evtCalcLatencyMs(exchange: string, ms: number) {
  * - '>=1000' for latencies greater than or equal to 1000ms
  */
 export function evtOrderbookPushLatencyMs(exchange: string, ms: number) {
+  const hidden = typeof document !== 'undefined' && document.hidden;
+  if (hidden) return;
+
   const bucket =
     ms < 50
       ? '<50'

@@ -359,7 +359,6 @@ export function useExchangeEngine(params: {
   const scheduleRecompute = useCallback((id: ExchangeId) => {
     if (pausedRef.current) return;
     if (recomputeTimers.current[id] != null) return;
-    calcStartedAtRef.current[id] = Date.now();
 
     recomputeTimers.current[id] = window.setTimeout(() => {
       recomputeTimers.current[id] = null;
@@ -371,6 +370,7 @@ export function useExchangeEngine(params: {
       if (!tradingPairRef.current) return;
       if (sizeRef.current <= 0) return;
 
+      calcStartedAtRef.current[id] = Date.now();
       void calculateCost(id);
     }, 120);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -402,7 +402,6 @@ export function useExchangeEngine(params: {
           [id]: { ...mapOrderBook(book), tradingPair: tradingPairRef.current },
         }));
 
-        calcStartedAtRef.current[id] = Date.now();
         scheduleRecompute(id);
       });
     },
@@ -504,9 +503,11 @@ export function useExchangeEngine(params: {
         pairKeyByEx.current[id] = nextKey;
         lastBucketByEx.current[id] = nextBucket;
 
-        sessionStartRef.current[id] = Date.now();
-        sessionDowntimeAccRef.current[id] = 0;
-        evtExchangeSessionStart(id);
+        if (!sessionStartRef.current[id]) {
+          sessionStartRef.current[id] = Date.now();
+          sessionDowntimeAccRef.current[id] = 0;
+          evtExchangeSessionStart(id);
+        }
 
         // Set a deadline for first data to arrive, else mark as error
         firstDataDeadlineRef.current[id] = Date.now() + 10000;
@@ -535,18 +536,22 @@ export function useExchangeEngine(params: {
       }
     };
 
+    const onFreeze = () => flushAll('freeze');
+
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       flushAll('beforeunload');
       event.preventDefault();
       event.returnValue = '';
     };
 
-    window.addEventListener('pagehide', onPageHide);
-    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('freeze', onFreeze, { capture: true });
+    window.addEventListener('pagehide', onPageHide, { capture: true });
+    window.addEventListener('beforeunload', onBeforeUnload, { capture: true });
 
     return () => {
-      window.removeEventListener('pagehide', onPageHide);
-      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('freeze', onFreeze, { capture: true });
+      window.removeEventListener('pagehide', onPageHide, { capture: true });
+      window.removeEventListener('beforeunload', onBeforeUnload, { capture: true });
     };
   }, []);
 
@@ -657,7 +662,9 @@ export function useExchangeEngine(params: {
 
     const deadline = Date.now() + 10000;
     const next: Record<ExchangeId, number> = {} as Record<ExchangeId, number>;
-    selected.forEach((id) => (next[id] = deadline));
+
+    selected.filter((id) => supportedSetRef.current.has(id)).forEach((id) => (next[id] = deadline));
+
     firstDataDeadlineRef.current = { ...firstDataDeadlineRef.current, ...next };
 
     upDownLatchRef.current = makeMap<'up' | 'down' | undefined>(undefined);
@@ -744,7 +751,10 @@ export function useExchangeEngine(params: {
       .filter((id) => supportedSet.has(id))
       .filter((id) => !!pairKeyByEx.current[id])
       .filter((id) => liveReadyRef.current[id])
-      .forEach((id) => void calculateCost(id));
+      .forEach((id) => {
+        calcStartedAtRef.current[id] = Date.now();
+        void calculateCost(id);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size, sizeAsset, side, settings, selected, supportedSet]);
 
@@ -757,7 +767,10 @@ export function useExchangeEngine(params: {
       .filter((id) => supportedSet.has(id))
       .filter((id) => !!pairKeyByEx.current[id])
       .filter((id) => liveReadyRef.current[id])
-      .forEach((id) => void calculateCost(id));
+      .forEach((id) => {
+        calcStartedAtRef.current[id] = Date.now();
+        void calculateCost(id);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused, selected, supportedSet]);
 
@@ -800,6 +813,9 @@ export function useExchangeEngine(params: {
       const booksSnap = booksRef.current;
 
       selected.forEach((id) => {
+        if (!supportedSetRef.current.has(id)) return;
+        if (!pairKeyByEx.current[id]) return;
+
         const dl = firstDataDeadlineRef.current[id];
         const book = booksSnap[id];
         const hasBook = !!book && ((book.bids?.length ?? 0) > 0 || (book.asks?.length ?? 0) > 0);
@@ -851,6 +867,8 @@ export function useExchangeEngine(params: {
       if (typeof lastAt === 'number')
         evtOrderbookPushLatencyMs(id, Math.max(0, Math.floor(Date.now() - lastAt)));
 
+      const startAt = calcStartedAtRef.current[id] ?? Date.now();
+
       const breakdown = await adapter.calculateCost({
         pair: `${base}/${quote}`,
         orderSize: sizeRef.current,
@@ -868,7 +886,7 @@ export function useExchangeEngine(params: {
       setErrors((prev) => ({ ...prev, [id]: null }));
 
       endExchangeDowntimeTracking(id, 'calc_ok');
-      evtCalcLatencyMs(id, Math.max(0, finishedAt - (calcStartedAtRef.current[id] ?? finishedAt)));
+      evtCalcLatencyMs(id, Math.max(0, finishedAt - startAt));
 
       const currentSelected = selectedRef.current.slice();
       const mapNow = { ...costBreakdownMapRef.current, [id]: breakdown };
@@ -910,7 +928,7 @@ export function useExchangeEngine(params: {
               base.toUpperCase(),
               quote.toUpperCase()
             );
-            binanceVsComparatorPct = bestNow === BINANCE_ID ? savings.pct : -savings.pct;
+            binanceVsComparatorPct = savings.pct;
           }
         }
 
@@ -924,7 +942,8 @@ export function useExchangeEngine(params: {
           bestExchangeAccountPrefs: settingsRef.current[bestNow] || {},
           binanceRank: binanceIdx >= 0 ? binanceIdx + 1 : -1,
           binanceComparator: comparator,
-          binanceVsComparatorPct: binanceVsComparatorPct * 100,
+          binanceWinningPct: bestNow === BINANCE_ID ? binanceVsComparatorPct : 0,
+          binanceLosingPct: bestNow !== BINANCE_ID ? binanceVsComparatorPct : 0,
         });
       }
     } catch (e: unknown) {
@@ -938,6 +957,8 @@ export function useExchangeEngine(params: {
             : String(e),
       }));
       startExchangeDowntimeTracking(id, 'calc_error');
+    } finally {
+      calcStartedAtRef.current[id] = undefined;
     }
   }
 
