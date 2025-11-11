@@ -21,6 +21,7 @@ import {
   evtExchangeSessionEnd,
   evtExchangeSessionSummary,
 } from '../../utils/analytics';
+import { ORDERBOOK_STALE_MS } from '../../utils/constants';
 
 /**
  * React hook for managing live order book data, cost calculations, and exchange selection logic
@@ -135,6 +136,9 @@ export function useExchangeEngine(params: {
   const autoSelectPendingRef = useRef(false);
   const pausedRef = useRef(paused);
   const lastBookUpdateAtRef = useRef<Record<ExchangeId, number | undefined>>(
+    makeMap<number | undefined>(undefined)
+  );
+  const staleSinceRef = useRef<Record<ExchangeId, number | undefined>>(
     makeMap<number | undefined>(undefined)
   );
   const calcStartedAtRef = useRef<Record<ExchangeId, number | undefined>>(
@@ -391,10 +395,14 @@ export function useExchangeEngine(params: {
         lastBookUpdateAtRef.current[id] = Date.now();
         const hasBook = (book.bids?.length ?? 0) > 0 || (book.asks?.length ?? 0) > 0;
 
-        if (hasBook && upDownLatchRef.current[id] !== 'up') {
-          upDownLatchRef.current[id] = 'up';
-          const duration = endExchangeDowntimeTracking(id, 'book_resumed') ?? 0;
-          if (duration > 0) sessionDowntimeAccRef.current[id] += duration;
+        if (hasBook) {
+          staleSinceRef.current[id] = undefined;
+
+          if (upDownLatchRef.current[id] !== 'up') {
+            upDownLatchRef.current[id] = 'up';
+            const duration = endExchangeDowntimeTracking(id, 'book_resumed') ?? 0;
+            if (duration > 0) sessionDowntimeAccRef.current[id] += duration;
+          }
         }
 
         setBooks((prev) => ({
@@ -510,13 +518,56 @@ export function useExchangeEngine(params: {
         }
 
         // Set a deadline for first data to arrive, else mark as error
-        firstDataDeadlineRef.current[id] = Date.now() + 10000;
-
-        setErrors((prev) => ({ ...prev, [id]: null }));
         clearState(id);
+        firstDataDeadlineRef.current[id] = Date.now() + 10000;
+        setErrors((prev) => ({ ...prev, [id]: null }));
       });
     },
     [bumpSeq, clearState, enqueueWatchOperation, unwatchWithPairKey]
+  );
+
+  // Soft reconnect for stale books: keep session but reset WS + state
+  const softReconnectExchange = useCallback(
+    (id: ExchangeId, base: string, quote: string) => {
+      if (isDisconnectingRef.current[id]) return;
+      isDisconnectingRef.current[id] = true;
+
+      try {
+        bumpSeq(id);
+        clearTimers(id);
+
+        if (subsRef.current[id]) {
+          try {
+            subsRef.current[id]!();
+          } catch (e) {
+            console.warn(`Error unsubscribing UI listener for ${id} during soft reconnect:`, e);
+          }
+          subsRef.current[id] = null;
+        }
+
+        try {
+          unwatchWithPairKey(id);
+        } catch (e) {
+          console.warn(`Error during unwatchLivePair for ${id} during soft reconnect:`, e);
+        }
+
+        try {
+          EXCHANGE_REGISTRY[id].disconnect!();
+        } catch (e) {
+          console.warn(`Error during disconnect for stale ${id}:`, e);
+        }
+
+        pairKeyByEx.current[id] = null;
+        liveReadyRef.current[id] = false;
+        clearState(id);
+
+        ensureSubscribed(id);
+        void watchPair(id, base, quote);
+      } finally {
+        isDisconnectingRef.current[id] = false;
+      }
+    },
+    [bumpSeq, clearTimers, clearState, ensureSubscribed, unwatchWithPairKey, watchPair]
   );
 
   // ON PAGE EXIT → flush all sessions
@@ -549,9 +600,9 @@ export function useExchangeEngine(params: {
     window.addEventListener('beforeunload', onBeforeUnload, { capture: true });
 
     return () => {
-      document.removeEventListener('freeze', onFreeze, { capture: true });
-      window.removeEventListener('pagehide', onPageHide, { capture: true });
-      window.removeEventListener('beforeunload', onBeforeUnload, { capture: true });
+      document.removeEventListener('freeze', onFreeze);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
     };
   }, []);
 
@@ -809,6 +860,8 @@ export function useExchangeEngine(params: {
     if (!tradingPair) return;
 
     const t = window.setInterval(() => {
+      if (pausedRef.current) return;
+
       const now = Date.now();
       const booksSnap = booksRef.current;
 
@@ -828,6 +881,43 @@ export function useExchangeEngine(params: {
 
     return () => window.clearInterval(t);
   }, [tradingPair, selected]);
+
+  // STALE ORDERBOOK watcher
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const pair = tradingPairRef.current;
+      if (!pair) return;
+      if (pausedRef.current) return;
+
+      const now = Date.now();
+      const { base, quote } = parsePair(pair);
+
+      selectedRef.current.forEach((id) => {
+        if (!supportedSetRef.current.has(id)) return;
+        if (!pairKeyByEx.current[id]) return;
+
+        const last = lastBookUpdateAtRef.current[id];
+        if (typeof last !== 'number') return;
+        if (now - last <= ORDERBOOK_STALE_MS) return;
+
+        if (upDownLatchRef.current[id] !== 'down') {
+          upDownLatchRef.current[id] = 'down';
+          startExchangeDowntimeTracking(id, 'book_stale');
+        }
+
+        if (staleSinceRef.current[id] != null) return;
+        staleSinceRef.current[id] = now;
+
+        console.warn(
+          `Orderbook for ${id} considered stale (${now - last}ms since last update) – soft reconnect`
+        );
+
+        softReconnectExchange(id, base, quote);
+      });
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, [softReconnectExchange]);
 
   /**
    * Calculates the trading cost breakdown for a given exchange.
@@ -891,13 +981,16 @@ export function useExchangeEngine(params: {
       const currentSelected = selectedRef.current.slice();
       const mapNow = { ...costBreakdownMapRef.current, [id]: breakdown };
       const errorsNow = { ...errorsRef.current, [id]: null };
+      const selectedAndSupported = currentSelected.filter((exId) =>
+        supportedSetRef.current.has(exId)
+      );
 
       const allSelectedReady =
-        currentSelected.length >= 2 &&
-        currentSelected.every((exId) => !!mapNow[exId] && !errorsNow[exId]);
+        selectedAndSupported.length >= 2 &&
+        selectedAndSupported.every((exId) => !!mapNow[exId] && !errorsNow[exId]);
 
       const rankedNow = calculateRankedExchanges(
-        currentSelected,
+        selectedAndSupported,
         { ...costBreakdownMapRef.current, [id]: breakdown },
         { ...errorsRef.current, [id]: null },
         sideRef.current
@@ -962,8 +1055,15 @@ export function useExchangeEngine(params: {
     }
   }
 
+  const nowTs = Date.now();
+  const selectedAndSupported = selected.filter((id) => supportedSet.has(id));
+  const freshSelected = selectedAndSupported.filter((id) => {
+    const last = lastBookUpdateAtRef.current[id];
+    return typeof last === 'number' && nowTs - last <= ORDERBOOK_STALE_MS;
+  });
+
   const rankedExchanges = calculateRankedExchanges(
-    selected,
+    freshSelected,
     costBreakdownMap,
     errors,
     sideRef.current

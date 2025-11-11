@@ -24,6 +24,11 @@ export const TERMS_KEY = `terms:accepted:${TERMS_VERSION}`;
 export const EMIT_INTERVAL_MS = 1000;
 
 /**
+ * The threshold that we consider an orderbook stale if no updates are received.
+ */
+export const ORDERBOOK_STALE_MS = 30000;
+
+/**
  * A set of stablecoin assets.
  */
 export const STABLECOINS = new Set([

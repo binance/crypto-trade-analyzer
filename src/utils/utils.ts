@@ -471,10 +471,13 @@ export function calculateSavings(
     }
   }
 
-  return {
-    usd: isBuy ? peerCalc - currentCalc : currentCalc - peerCalc,
-    pct: Math.abs((currentCalc - peerCalc) / peerCalc),
-  };
+  const usd = isBuy ? peerCalc - currentCalc : currentCalc - peerCalc;
+  const pct =
+    currentCalc && Math.abs(currentCalc) > 0 && peerCalc && Math.abs(peerCalc) > 0
+      ? Math.abs((Math.abs(currentCalc) - Math.abs(peerCalc)) / Math.abs(peerCalc))
+      : 0;
+
+  return { usd, pct };
 }
 
 /**
