@@ -140,7 +140,8 @@ export function ExchangeCard({
   const [waitingForLiveOrderBook, setWaitingForLiveOrderBook] = useState(false);
   const waitingGateDeadlineRef = useRef<number>(0);
   const tradingPairRef = useRef<string>('');
-  const hadBookRef = useRef(false);
+  const hadBookEverRef = useRef(false);
+  const isInitialLoadRef = useRef(false);
 
   const book = exchangeId && books ? books[exchangeId] : undefined;
   const unsupported =
@@ -150,28 +151,81 @@ export function ExchangeCard({
   const tradeHref = getExchangeTradeHref(base, quote, exchangeName);
   const idx = Array.from({ length: LIVE_ORDER_BOOK_DEPTH_ROWS }, (_, i) => i);
 
-  /* Reset waiting for live order book when trading pair changes */
+  /**
+   * When the trading pair changes, treat it as a fresh, global load:
+   * - all selected + supported exchanges should get books before we show content
+   * - we reset "ever had book" and start a 10s gate.
+   */
   useEffect(() => {
+    tradingPairRef.current = tradingPair;
+    hadBookEverRef.current = false;
+    waitingGateDeadlineRef.current = 0;
+    isInitialLoadRef.current = false;
+
+    if (!tradingPair || !isSelected || unsupported) {
+      setWaitingForLiveOrderBook(false);
+      return;
+    }
+
+    isInitialLoadRef.current = true;
     setWaitingForLiveOrderBook(true);
     waitingGateDeadlineRef.current = Date.now() + 10000;
-    tradingPairRef.current = tradingPair;
-  }, [tradingPair]);
+  }, [tradingPair, isSelected, unsupported]);
 
-  /* Detect when we lose the order book after having it */
+  /**
+   * If this card becomes unselected or unsupported, clear all local gating state.
+   */
+  useEffect(() => {
+    if (!isSelected || unsupported) {
+      setWaitingForLiveOrderBook(false);
+      hadBookEverRef.current = false;
+      waitingGateDeadlineRef.current = 0;
+      isInitialLoadRef.current = false;
+    }
+  }, [isSelected, unsupported]);
+
+  /**
+   * Track book presence for this exchange and handle *reconnect* waiting.
+   *
+   * - During initial load (isInitialLoadRef === true), we let the global gate
+   *   decide when to clear waiting; we just mark that we've ever seen a book.
+   * - After initial load (isInitialLoadRef === false):
+   *   - If we lose the book after having one → show waiting for up to 10s.
+   *   - When the book comes back while waiting → hide the overlay.
+   */
   useEffect(() => {
     const hasBook = !!book && ((book.bids?.length ?? 0) > 0 || (book.asks?.length ?? 0) > 0);
 
-    if (hadBookRef.current && !hasBook && isSelected && !unsupported) {
+    if (hasBook && isSelected && !unsupported) {
+      if (!hadBookEverRef.current) hadBookEverRef.current = true;
+
+      // For reconnects (not initial load), clear the overlay as soon as a fresh book arrives
+      if (!isInitialLoadRef.current && waitingForLiveOrderBook) {
+        setWaitingForLiveOrderBook(false);
+      }
+    } else if (
+      // reconnect case: we had a book in the past, now it's gone, and we're past the initial load
+      !hasBook &&
+      hadBookEverRef.current &&
+      !isInitialLoadRef.current &&
+      isSelected &&
+      !unsupported
+    ) {
       setWaitingForLiveOrderBook(true);
       waitingGateDeadlineRef.current = Date.now() + 10000;
     }
+  }, [book, isSelected, unsupported, waitingForLiveOrderBook]);
 
-    hadBookRef.current = hasBook;
-  }, [book, isSelected, unsupported]);
-
-  /* Wait for live order book data to arrive */
+  /**
+   * Global gate for the *initial* load of a trading pair:
+   * - Wait until all selected + supported exchanges have a non-empty book for this pair,
+   *   or up to 10 seconds.
+   * - Once this fires, we disable initial gating (isInitialLoadRef = false) so later
+   *   reconnects only affect their own card.
+   */
   useEffect(() => {
     if (!isSelected || unsupported) return;
+    if (!isInitialLoadRef.current) return;
 
     const targetIds = selectedExchanges.filter((id) => supportedExchanges.has(id));
     const hasSelections = selectedExchanges.length > 0;
@@ -193,21 +247,23 @@ export function ExchangeCard({
       });
 
     const tick = () => {
-      const timedOut = Date.now() >= waitingGateDeadlineRef.current;
-      if (!shouldWait) {
+      const timedOut =
+        waitingGateDeadlineRef.current > 0 && Date.now() >= waitingGateDeadlineRef.current;
+
+      if (!shouldWait || readyNow || timedOut) {
         setWaitingForLiveOrderBook(false);
+        isInitialLoadRef.current = false; // stop global gating after first completion
         return true;
       }
 
-      if (readyNow || timedOut) {
-        setWaitingForLiveOrderBook(false);
-        return true;
-      }
       return false;
     };
 
     if (tick()) return;
-    const interval = setInterval(() => (tick() ? clearInterval(interval) : null), 110);
+    const interval = setInterval(() => {
+      if (tick()) clearInterval(interval);
+    }, 110);
+
     return () => clearInterval(interval);
   }, [tradingPair, selectedExchanges, supportedExchanges, books, isSelected, unsupported]);
 
