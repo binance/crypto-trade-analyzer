@@ -601,7 +601,6 @@ export function useExchangeEngine(params: {
   useEffect(() => {
     const onActiveChange = (active: boolean) => {
       const wasActive = isPageActiveRef.current;
-      console.log('visibity changed', wasActive, active);
       if (wasActive === active) return;
       isPageActiveRef.current = active;
     };
@@ -1052,7 +1051,7 @@ export function useExchangeEngine(params: {
         let comparator: ExchangeId | undefined;
         if (binanceIdx >= 0) comparator = binanceIdx === 0 ? runnerUp : bestNow;
 
-        let binanceVsComparatorPct = 0;
+        let binanceVsComparatorPct;
         if (binanceSelected && comparator) {
           const isBuy = side === 'buy';
           const map = { ...costBreakdownMapRef.current, [id]: breakdown };
@@ -1066,7 +1065,7 @@ export function useExchangeEngine(params: {
               base.toUpperCase(),
               quote.toUpperCase()
             );
-            binanceVsComparatorPct = savings.pct;
+            binanceVsComparatorPct = savings.pct >= 0 && savings.pct <= 1 ? savings.pct : undefined;
           }
         }
 
