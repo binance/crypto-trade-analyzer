@@ -346,7 +346,7 @@ export class BybitBookClient implements BookWsClient {
     this.wsState = 'connecting';
     this.subscribedTopics.clear();
 
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       this.ws!.onopen = () => {
         console.debug('Bybit WebSocket connected');
         this.wsState = 'connected';
@@ -384,7 +384,6 @@ export class BybitBookClient implements BookWsClient {
 
       this.ws!.onerror = (err) => {
         console.error('Bybit WebSocket error:', err);
-        reject(err as unknown as Error);
       };
     });
   }

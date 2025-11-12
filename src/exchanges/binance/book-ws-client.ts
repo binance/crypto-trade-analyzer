@@ -272,7 +272,7 @@ export class BinanceBookClient implements BookWsClient {
     this.wsState = 'connecting';
     this.subscribedStreams.clear();
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       this.ws!.onopen = () => {
         console.debug('Binance WebSocket connected');
         this.wsState = 'connected';
@@ -298,7 +298,6 @@ export class BinanceBookClient implements BookWsClient {
 
       this.ws!.onerror = (err) => {
         console.error('Binance WebSocket error:', err);
-        reject(err as unknown as Error);
       };
     });
   }

@@ -161,6 +161,7 @@ export function useExchangeEngine(params: {
   );
   const sessionDowntimeAccRef = useRef<Record<ExchangeId, number>>(makeMap<number>(0));
   const hasFlushedOnExitRef = useRef(false);
+  const isPageActiveRef = useRef(true);
 
   useEffect(() => {
     prevTradingPairRef.current = tradingPairRef.current;
@@ -204,6 +205,11 @@ export function useExchangeEngine(params: {
   }, [errors]);
 
   /**
+   * Check if page is active at the moment
+   */
+  const computeIsPageActive = () => document.visibilityState === 'visible';
+
+  /**
    * Marks the specified exchange as down and starts tracking its downtime.
    * If the exchange is already being tracked as down, the function does nothing.
    *
@@ -211,9 +217,10 @@ export function useExchangeEngine(params: {
    * @param reason - Optional reason for the exchange downtime.
    */
   const startExchangeDowntimeTracking = (id: ExchangeId, reason?: string) => {
+    if (!isPageActiveRef.current) return;
     if (downSinceRef.current[id] != null) return;
     downSinceRef.current[id] = Date.now();
-    evtExchangeStatus({ exchange: id, status: 'down', reason });
+    if (isPageActiveRef.current) evtExchangeStatus({ exchange: id, status: 'down', reason });
   };
 
   /**
@@ -231,7 +238,8 @@ export function useExchangeEngine(params: {
     if (started == null) return;
     const duration = Date.now() - started;
     downSinceRef.current[id] = undefined;
-    evtExchangeStatus({ exchange: id, status: 'up', reason, down_duration_ms: duration });
+    if (isPageActiveRef.current)
+      evtExchangeStatus({ exchange: id, status: 'up', reason, down_duration_ms: duration });
     return duration;
   };
 
@@ -244,7 +252,7 @@ export function useExchangeEngine(params: {
   const endSessionWithSummary = (id: ExchangeId, reason: string) => {
     const start = sessionStartRef.current[id];
     if (!start) {
-      evtExchangeSessionEnd(id, reason);
+      if (isPageActiveRef.current) evtExchangeSessionEnd(id, reason);
       return;
     }
 
@@ -267,14 +275,16 @@ export function useExchangeEngine(params: {
       ts: Date.now(),
     };
 
-    evtExchangeSessionSummary({
-      exchange: payload.exchange,
-      total_ms: payload.total_ms,
-      downtime_ms: payload.downtime_ms,
-      uptime_ratio: payload.uptime_ratio,
-      reason,
-    });
-    evtExchangeSessionEnd(id, reason);
+    if (isPageActiveRef.current) {
+      evtExchangeSessionSummary({
+        exchange: payload.exchange,
+        total_ms: payload.total_ms,
+        downtime_ms: payload.downtime_ms,
+        uptime_ratio: payload.uptime_ratio,
+        reason,
+      });
+      evtExchangeSessionEnd(id, reason);
+    }
 
     sessionStartRef.current[id] = undefined;
     sessionDowntimeAccRef.current[id] = 0;
@@ -361,7 +371,7 @@ export function useExchangeEngine(params: {
 
   // Debounce and schedule cost recalculation
   const scheduleRecompute = useCallback((id: ExchangeId) => {
-    if (pausedRef.current) return;
+    if (pausedRef.current || !isPageActiveRef.current) return;
     if (recomputeTimers.current[id] != null) return;
 
     recomputeTimers.current[id] = window.setTimeout(() => {
@@ -398,7 +408,7 @@ export function useExchangeEngine(params: {
         if (hasBook) {
           staleSinceRef.current[id] = undefined;
 
-          if (upDownLatchRef.current[id] !== 'up') {
+          if (isPageActiveRef.current && upDownLatchRef.current[id] !== 'up') {
             upDownLatchRef.current[id] = 'up';
             const duration = endExchangeDowntimeTracking(id, 'book_resumed') ?? 0;
             if (duration > 0) sessionDowntimeAccRef.current[id] += duration;
@@ -514,7 +524,7 @@ export function useExchangeEngine(params: {
         if (!sessionStartRef.current[id]) {
           sessionStartRef.current[id] = Date.now();
           sessionDowntimeAccRef.current[id] = 0;
-          evtExchangeSessionStart(id);
+          if (isPageActiveRef.current) evtExchangeSessionStart(id);
         }
 
         // Set a deadline for first data to arrive, else mark as error
@@ -528,12 +538,14 @@ export function useExchangeEngine(params: {
 
   // Soft reconnect for stale books: keep session but reset WS + state
   const softReconnectExchange = useCallback(
-    (id: ExchangeId, base: string, quote: string) => {
+    async (id: ExchangeId, base: string, quote: string) => {
       if (isDisconnectingRef.current[id]) return;
       isDisconnectingRef.current[id] = true;
 
       try {
         bumpSeq(id);
+        const seqAtStart = opSeqRef.current[id];
+
         clearTimers(id);
 
         if (subsRef.current[id]) {
@@ -552,7 +564,7 @@ export function useExchangeEngine(params: {
         }
 
         try {
-          EXCHANGE_REGISTRY[id].disconnect!();
+          await EXCHANGE_REGISTRY[id].disconnect!();
         } catch (e) {
           console.warn(`Error during disconnect for stale ${id}:`, e);
         }
@@ -561,14 +573,46 @@ export function useExchangeEngine(params: {
         liveReadyRef.current[id] = false;
         clearState(id);
 
+        // give the socket a moment to fully close before reconnecting; jitter avoids herd
+        const jitter = 250 + Math.floor(Math.random() * 250); // 250–500ms
+        await sleep(jitter);
+
+        // abort if something changed meanwhile
+        if (
+          opSeqRef.current[id] !== seqAtStart ||
+          pausedRef.current ||
+          !selectedRef.current.includes(id) ||
+          !supportedSetRef.current.has(id) ||
+          !tradingPairRef.current
+        ) {
+          return;
+        }
+
         ensureSubscribed(id);
-        void watchPair(id, base, quote);
+        await watchPair(id, base, quote);
       } finally {
         isDisconnectingRef.current[id] = false;
       }
     },
-    [bumpSeq, clearTimers, clearState, ensureSubscribed, unwatchWithPairKey, watchPair]
+    [bumpSeq, clearState, clearTimers, ensureSubscribed, unwatchWithPairKey, watchPair]
   );
+
+  // ON PAGE INACTIVE → set page as inactive
+  useEffect(() => {
+    const onActiveChange = (active: boolean) => {
+      const wasActive = isPageActiveRef.current;
+      console.log('visibity changed', wasActive, active);
+      if (wasActive === active) return;
+      isPageActiveRef.current = active;
+    };
+
+    const handleVisibility = () => onActiveChange(computeIsPageActive());
+    document.addEventListener('visibilitychange', handleVisibility, { capture: true });
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   // ON PAGE EXIT → flush all sessions
   useEffect(() => {
@@ -675,7 +719,7 @@ export function useExchangeEngine(params: {
       const { base, quote } = parsePair(tradingPair);
       const eligible = selected.filter((id) => supportedSetRef.current.has(id));
 
-      evtTradingPairSelected(tradingPair, base, quote);
+      if (isPageActiveRef.current) evtTradingPairSelected(tradingPair, base, quote);
 
       if (eligible.length === 0) {
         if (active) setPriceBucket(undefined);
@@ -709,7 +753,7 @@ export function useExchangeEngine(params: {
 
   // TRADING PAIR or SELECTED changes → open 10s windows, reset freshness map and emit exchanges_selected
   useEffect(() => {
-    evtExchangesSelected(selected ?? []);
+    if (isPageActiveRef.current) evtExchangesSelected(selected ?? []);
 
     const deadline = Date.now() + 10000;
     const next: Record<ExchangeId, number> = {} as Record<ExchangeId, number>;
@@ -872,7 +916,13 @@ export function useExchangeEngine(params: {
         const dl = firstDataDeadlineRef.current[id];
         const book = booksSnap[id];
         const hasBook = !!book && ((book.bids?.length ?? 0) > 0 || (book.asks?.length ?? 0) > 0);
-        if (!hasBook && dl && now >= dl && upDownLatchRef.current[id] !== 'down') {
+        if (
+          isPageActiveRef.current &&
+          !hasBook &&
+          dl &&
+          now >= dl &&
+          upDownLatchRef.current[id] !== 'down'
+        ) {
           upDownLatchRef.current[id] = 'down';
           startExchangeDowntimeTracking(id, 'no_book_10s');
         }
@@ -900,11 +950,6 @@ export function useExchangeEngine(params: {
         if (typeof last !== 'number') return;
         if (now - last <= ORDERBOOK_STALE_MS) return;
 
-        if (upDownLatchRef.current[id] !== 'down') {
-          upDownLatchRef.current[id] = 'down';
-          startExchangeDowntimeTracking(id, 'book_stale');
-        }
-
         if (staleSinceRef.current[id] != null) return;
         staleSinceRef.current[id] = now;
 
@@ -912,6 +957,7 @@ export function useExchangeEngine(params: {
           `Orderbook for ${id} considered stale (${now - last}ms since last update) – soft reconnect`
         );
 
+        firstDataDeadlineRef.current[id] = Date.now() + 10000;
         softReconnectExchange(id, base, quote);
       });
     }, 5000);
@@ -935,7 +981,7 @@ export function useExchangeEngine(params: {
    * - Handles errors gracefully and logs warnings if calculation fails.
    */
   async function calculateCost(id: ExchangeId) {
-    if (pausedRef.current) return;
+    if (pausedRef.current || !isPageActiveRef.current) return;
     if (!supportedSetRef.current.has(id)) return;
 
     const pairKey = pairKeyByEx.current[id];
@@ -954,7 +1000,7 @@ export function useExchangeEngine(params: {
 
     try {
       const lastAt = lastBookUpdateAtRef.current[id];
-      if (typeof lastAt === 'number')
+      if (typeof lastAt === 'number' && isPageActiveRef.current)
         evtOrderbookPushLatencyMs(id, Math.max(0, Math.floor(Date.now() - lastAt)));
 
       const startAt = calcStartedAtRef.current[id] ?? Date.now();
@@ -975,8 +1021,7 @@ export function useExchangeEngine(params: {
       setCalcTimestamps((prev) => ({ ...prev, [id]: new Date(finishedAt) }));
       setErrors((prev) => ({ ...prev, [id]: null }));
 
-      endExchangeDowntimeTracking(id, 'calc_ok');
-      evtCalcLatencyMs(id, Math.max(0, finishedAt - startAt));
+      if (isPageActiveRef.current) evtCalcLatencyMs(id, Math.max(0, finishedAt - startAt));
 
       const currentSelected = selectedRef.current.slice();
       const mapNow = { ...costBreakdownMapRef.current, [id]: breakdown };
@@ -1025,19 +1070,20 @@ export function useExchangeEngine(params: {
           }
         }
 
-        evtCalcPerformed({
-          tradingPair: tradingPairRef.current,
-          side: sideRef.current,
-          quantity: sizeRef.current,
-          sizeAsset: sizeAssetRef.current === 'base' ? base : quote,
-          selectedExchanges: currentSelected,
-          bestExchange: bestNow,
-          bestExchangeAccountPrefs: settingsRef.current[bestNow] || {},
-          binanceRank: binanceIdx >= 0 ? binanceIdx + 1 : -1,
-          binanceComparator: comparator,
-          binanceWinningPct: bestNow === BINANCE_ID ? binanceVsComparatorPct : 0,
-          binanceLosingPct: bestNow !== BINANCE_ID ? binanceVsComparatorPct : 0,
-        });
+        if (isPageActiveRef.current)
+          evtCalcPerformed({
+            tradingPair: tradingPairRef.current,
+            side: sideRef.current,
+            quantity: sizeRef.current,
+            sizeAsset: sizeAssetRef.current === 'base' ? base : quote,
+            selectedExchanges: currentSelected,
+            bestExchange: bestNow,
+            bestExchangeAccountPrefs: settingsRef.current[bestNow] || {},
+            binanceRank: binanceIdx >= 0 ? binanceIdx + 1 : -1,
+            binanceComparator: comparator,
+            binanceWinningPct: bestNow === BINANCE_ID ? binanceVsComparatorPct : 0,
+            binanceLosingPct: bestNow !== BINANCE_ID ? binanceVsComparatorPct : 0,
+          });
       }
     } catch (e: unknown) {
       console.warn(`Failed to calculate cost for ${id}:`, e);
@@ -1049,7 +1095,6 @@ export function useExchangeEngine(params: {
             ? String((e as { message?: unknown }).message)
             : String(e),
       }));
-      startExchangeDowntimeTracking(id, 'calc_error');
     } finally {
       calcStartedAtRef.current[id] = undefined;
     }

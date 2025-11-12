@@ -336,7 +336,7 @@ export class CoinbaseBookClient implements BookWsClient {
     this.wsState = 'connecting';
     this.subscribedProducts.clear();
 
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       this.ws!.onopen = () => {
         console.debug('Coinbase WebSocket connected');
         this.wsState = 'connected';
@@ -374,7 +374,6 @@ export class CoinbaseBookClient implements BookWsClient {
 
       this.ws!.onerror = (err) => {
         console.error('Coinbase WebSocket error:', err);
-        reject(err as unknown as Error);
       };
     });
   }

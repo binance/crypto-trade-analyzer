@@ -306,7 +306,7 @@ export class OkxBookClient implements BookWsClient {
     this.wsState = 'connecting';
     this.subscribedArgs.clear();
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       this.ws!.onopen = () => {
         console.debug('OKX WebSocket connected');
         this.wsState = 'connected';
@@ -332,7 +332,6 @@ export class OkxBookClient implements BookWsClient {
 
       this.ws!.onerror = (err) => {
         console.error('OKX WebSocket error:', err);
-        reject(err as unknown as Error);
       };
     });
   }

@@ -1,7 +1,7 @@
 {
   "name": "crypto-trade-analyzer",
   "description": "Real-time spot trade analyzer simulating order execution using live order books.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "engines": {
     "node": ">=18.18.0 || >=20"

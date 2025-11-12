@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2 - 2025-11-12
+
+- Query exchanges instead of CoinPaprika to track active trading pairs.
+
 ## 1.0.1 - 2025-11-11
 
 - Fixed a bug with stale orderbooks when page is hidden.
