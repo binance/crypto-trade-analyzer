@@ -566,26 +566,17 @@ export function calculateRankedExchanges(
 
   if (!valid.length) return [];
 
-  const EPS = 1e-12;
-
   /**
-   * Fee-asset agnostic, execution-basis score.
+   * Calculates the effective price for a given cost breakdown, accounting for trading fees and asset conversions.
    *
-   * BUY  -> USD paid per *effective* unit of base kept.
-   *        - If fee is base: netBaseReceived already reduced.
-   *        - Else (fee in quote or third): subtract base-equivalent of feeUSD at execution basis.
-   *        score = totalTradeUsd / effectiveNetBase   (lower is better)
-   *
-   * SELL -> (negative) quote received per unit of base sold.
-   *        - If fee is quote: netQuoteReceived already reduced.
-   *        - Else (fee in base or third): subtract quote-equivalent of feeUSD at execution basis.
-   *        score = -(effectiveNetQuote / totalBase)   (lower is better)
+   * @param bd - The cost breakdown object containing execution data, fees, and asset information
+   * @returns The effective price as a number, or positive infinity if calculation is not possible
    */
   const effectivePrice = (bd: CostBreakdown): number => {
     const base = bd.baseAsset?.toUpperCase?.();
     const quote = bd.quoteAsset?.toUpperCase?.();
     const feeAsset = bd.tradingFee?.asset?.toUpperCase?.();
-    const feeUsd = bd.tradingFee?.usd ?? 0;
+    const sizeAsset = bd.sizeAsset;
     const thirdFeeAsset = feeAsset && feeAsset !== base && feeAsset !== quote;
 
     // derive execution USD conversions
@@ -597,13 +588,19 @@ export function calculateRankedExchanges(
     if (!(usdPerQuote > 0) || !(usdPerBaseExec > 0)) return Number.POSITIVE_INFINITY;
 
     if (side === 'buy') {
-      const effectiveNetBase = bd.netBaseReceived - (thirdFeeAsset ? feeUsd / usdPerBaseExec : 0); // base after fee
-      if (!(effectiveNetBase > EPS)) return Number.POSITIVE_INFINITY;
-      return bd.totalTradeUsd / effectiveNetBase; // USD spent per effective base
+      if (sizeAsset === 'base') return bd.totalTradeUsd;
+      else
+        return -(
+          bd.netBaseReceived -
+          (bd.tradingFee.asset !== base ? (bd.tradingFee.amountInBase ?? 0) : 0)
+        );
     } else {
-      if (!(bd.totalBase > EPS)) return Number.POSITIVE_INFINITY;
-      const effectiveNetQuote = bd.netQuoteReceived - (thirdFeeAsset ? feeUsd / usdPerQuote : 0); // quote after fee
-      return -(effectiveNetQuote / bd.totalBase); // negative quote received per base sold
+      if (sizeAsset === 'base')
+        return bd.totalReceivedUsd - (thirdFeeAsset ? bd.tradingFee.usd : 0);
+      else
+        return -(
+          bd.sizeBase + (bd.tradingFee.asset !== base ? (bd.tradingFee.amountInBase ?? 0) : 0)
+        );
     }
   };
 
@@ -676,7 +673,7 @@ export function calculateRankedExchanges(
   ) => {
     const a = effectivePrice(A.bd);
     const b = effectivePrice(B.bd);
-    if (!checkIfAlmostEqual(a, b)) return a - b;
+    if (!checkIfAlmostEqual(a, b)) return side === 'buy' ? a - b : b - a;
 
     // If the effective prices are indistinguishable, prefer the one
     // that also has better native quantities explicitly (extra safety).

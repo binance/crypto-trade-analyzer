@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3 - 2025-11-13
+
+- Avoid soft reconnection on network change.
+- Update best exchange algorithm to match the savings one.
+
 ## 1.0.2 - 2025-11-12
 
 - Query exchanges instead of CoinPaprika to track active trading pairs.

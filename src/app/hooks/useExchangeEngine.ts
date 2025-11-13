@@ -162,6 +162,8 @@ export function useExchangeEngine(params: {
   const sessionDowntimeAccRef = useRef<Record<ExchangeId, number>>(makeMap<number>(0));
   const hasFlushedOnExitRef = useRef(false);
   const isPageActiveRef = useRef(true);
+  const isOnlineRef = useRef(true);
+  const recoveringFromOfflineRef = useRef(false);
 
   useEffect(() => {
     prevTradingPairRef.current = tradingPairRef.current;
@@ -613,6 +615,42 @@ export function useExchangeEngine(params: {
     };
   }, []);
 
+  // ON NETWORK FLAPPING → trigger reconnection if needed
+  useEffect(() => {
+    const handleOnline = async () => {
+      const wasOnline = isOnlineRef.current;
+      const online =
+        typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+          ? navigator.onLine
+          : true;
+      if (wasOnline === online) return;
+      isOnlineRef.current = online;
+
+      if (online) {
+        recoveringFromOfflineRef.current = true;
+        await sleep(5000);
+        recoveringFromOfflineRef.current = false;
+      }
+    };
+    const handleOffline = () => {
+      const online =
+        typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+          ? navigator.onLine
+          : false;
+      if (online === isOnlineRef.current) return;
+      isOnlineRef.current = online;
+      if (!online) recoveringFromOfflineRef.current = true;
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [softReconnectExchange]);
+
   // ON PAGE EXIT → flush all sessions
   useEffect(() => {
     const flushAll = (reason: string) => {
@@ -934,6 +972,7 @@ export function useExchangeEngine(params: {
   // STALE ORDERBOOK watcher
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (!isOnlineRef.current || recoveringFromOfflineRef.current) return;
       const pair = tradingPairRef.current;
       if (!pair) return;
       if (pausedRef.current) return;
