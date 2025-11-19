@@ -491,9 +491,19 @@ function MainApp() {
           </div>
         </div>
 
+        {/* Footer */}
         <div className="mt-8 pb-8 text-xs text-muted">
           Live order books and fees via exchanges’ public APIs • Pair data and USD conversions via
           CoinPaprika, CryptoCompare, and CoinGecko APIs. •{' '}
+          <Link
+            className="underline"
+            to="https://github.com/binance/crypto-trade-analyzer"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Source Code on GitHub
+          </Link>{' '}
+          •{' '}
           <Link className="underline" to="/terms" target="_blank" rel="noopener noreferrer">
             Terms of Use
           </Link>
