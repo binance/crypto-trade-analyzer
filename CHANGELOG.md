@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4 - 2025-11-19
+
+- Resolved security vulnerabilities.
+
 ## 1.0.3 - 2025-11-13
 
 - Avoid soft reconnection on network change.
