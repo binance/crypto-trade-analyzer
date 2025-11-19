@@ -1114,7 +1114,7 @@ export function useExchangeEngine(params: {
             side: sideRef.current,
             quantity: sizeRef.current,
             sizeAsset: sizeAssetRef.current === 'base' ? base : quote,
-            selectedExchanges: currentSelected,
+            selectedExchanges: selectedAndSupported,
             bestExchange: bestNow,
             bestExchangeAccountPrefs: settingsRef.current[bestNow] || {},
             binanceRank: binanceIdx >= 0 ? binanceIdx + 1 : -1,
