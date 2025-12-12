@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { INITIAL_TRADING_PAIRS_LIST } from './constants';
 import type { OrderBookListener } from '../core/interfaces/book-ws-client';
 import type { OrderBook, OrderBookEntry, OrderSide } from '../core/interfaces/order-book';
 import type { CostBreakdown } from '../core/interfaces/fee-config';
@@ -726,4 +727,40 @@ export function getExchangeTradeHref(base: string, quote: string, exchangeName: 
     default:
       return undefined;
   }
+}
+
+/**
+ * Generates a random trading pair with a snapped quantity size.
+ *
+ * Selects a random trading pair from the example pairs list and generates
+ * a random size within the configured min/max bounds. The size is then
+ * "snapped" to reasonable increments (0.1 for sizes < 1, or 50 for sizes >= 1).
+ *
+ * @returns An object containing:
+ * - `initialTradingPair`: The trading pair symbol (e.g., "BTC/USD")
+ * - `initialSizeAsset`: Whether the size refers to the 'base' or 'quote' asset
+ * - `initialSize`: The snapped size as a formatted string (1 decimal for sizes < 1, 0 decimals otherwise)
+ */
+export function getTradingPairAndQuantity(): {
+  initialTradingPair: string;
+  initialSizeAsset: 'base' | 'quote';
+  initialSize: string;
+} {
+  const idx = Math.floor(Math.random() * INITIAL_TRADING_PAIRS_LIST.length);
+  const cfg = INITIAL_TRADING_PAIRS_LIST[idx];
+
+  const rnd = Math.random();
+  const rawSize = cfg.minSize + rnd * (cfg.maxSize - cfg.minSize);
+
+  let snappedSize: number;
+  if (rawSize < 1) snappedSize = Math.round(rawSize * 10) / 10;
+  else snappedSize = Math.round(rawSize / 50) * 50;
+
+  snappedSize = Math.min(Math.max(snappedSize, cfg.minSize), cfg.maxSize);
+
+  return {
+    initialTradingPair: cfg.tradingPair,
+    initialSizeAsset: cfg.sizeAsset as 'base' | 'quote',
+    initialSize: snappedSize < 1 ? snappedSize.toFixed(1) : snappedSize.toFixed(0),
+  };
 }

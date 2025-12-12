@@ -10,7 +10,7 @@ import { useSupportedExchanges } from '../hooks/useSupportedExchanges';
 import { useExchangeEngine } from '../hooks/useExchangeEngine';
 import { useTermsConsent } from '../hooks/useTermsConsent';
 import { MAX_CARD_SLOTS } from '../../utils/constants';
-import { countDecimals, parsePair } from '../../utils/utils';
+import { countDecimals, getTradingPairAndQuantity, parsePair } from '../../utils/utils';
 import { syncGAConsent } from '../../utils/analytics';
 import type { ExchangeId } from '../../exchanges';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
@@ -90,31 +90,47 @@ function BottomSheet({
 }
 
 /**
- * Main application component that renders the crypto trade analyzer interface.
+ * Main application component for the Crypto Trade Analyzer.
  *
- * This component provides a comprehensive trading comparison tool that:
- * - Allows users to select a trading pair and order size
- * - Compares real-time pricing and fees across multiple cryptocurrency exchanges
- * - Displays cost breakdowns and identifies the most cost-efficient exchange
- * - Supports both buy and sell market orders on spot markets
- * - Provides responsive layouts for desktop and mobile devices
+ * Manages the state and rendering of the trading interface, including exchange selection,
+ * trading pair configuration, order size input, and real-time order book analysis.
  *
- * @returns The rendered main application interface
+ * @component
+ * @param {Object} props - Component props
+ * @param {OrderSide} props.initialSide - The initial order side ('buy' or 'sell')
+ * @returns {JSX.Element} The main application UI with header, controls, and exchange cards
+ *
+ * @example
+ * ```tsx
+ * <MainApp initialSide="buy" />
+ * ```
+ *
+ * @remarks
+ * - Syncs Google Analytics consent on component mount
+ * - Manages multiple state values for trading configuration (pair, size, exchanges, etc.)
+ * - Automatically selects initial exchanges on first render
+ * - Uses IntersectionObserver to detect sticky header behavior on mobile
+ * - Handles responsive UI with different layouts for mobile and desktop
+ * - Integrates with custom hooks for exchange data, settings, and trading engine calculations
+ * - Supports pausing/resuming calculations with "best exchange" tracking
  */
-function MainApp() {
+function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
   // Sync GA consent on mount
   useEffect(() => {
     syncGAConsent();
   }, []);
 
-  const [side, setSide] = useState<OrderSide>('buy');
-  const [tradingPair, setTradingPair] = useState('BTC/USDT');
-  const [sizeStr, setSizeStr] = useState('1');
+  const { initialTradingPair, initialSize, initialSizeAsset } = getTradingPairAndQuantity();
+  const [side, setSide] = useState<OrderSide>(initialSide);
+  const [tradingPair, setTradingPair] = useState(initialTradingPair);
+  const [sizeStr, setSizeStr] = useState(initialSize);
   const [slots, setSlots] = useState<(ExchangeId | null)[]>([null, null, null, null]);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [sizeAsset, setSizeAsset] = useState<'base' | 'quote'>('base');
+  const [sizeAsset, setSizeAsset] = useState<'base' | 'quote'>(
+    initialSizeAsset as 'base' | 'quote'
+  );
   const [stuck, setStuck] = useState(false);
   const [pausedBest, setPausedBest] = useState<ExchangeId | null>(null);
 
@@ -134,12 +150,12 @@ function MainApp() {
   const supportedSetRaw = useSupportedExchanges({ tradingPair, pairDir, allowed: ids });
 
   const supportedSet = useMemo(() => {
-    if (tradingPair === 'BTC/USDT' && supportedSetRaw.size === 0) {
+    if (loadingPairs && supportedSetRaw.size === 0) {
       const seed = ids.length ? ids : cardOrder;
-      return new Set<ExchangeId>([...seed] as ExchangeId[]);
+      return new Set<ExchangeId>(seed as ExchangeId[]);
     }
     return supportedSetRaw;
-  }, [supportedSetRaw, tradingPair, ids, cardOrder]);
+  }, [loadingPairs, supportedSetRaw, ids, cardOrder]);
 
   const { books, costBreakdownMap, errors, rankedExchanges, calcTimestamps, priceBucket } =
     useExchangeEngine({
@@ -444,7 +460,11 @@ function MainApp() {
               const id = slotExId as ExchangeId;
               const exchangeName = isSelected && id ? names[id] : '';
               const unsupported =
-                isSelected && id ? (tradingPair ? !supportedSet.has(id) : true) : false;
+                isSelected && id
+                  ? tradingPair
+                    ? !loadingPairs && !supportedSet.has(id)
+                    : true
+                  : false;
               const costBreakdown = isSelected && id ? costBreakdownMap[id] : undefined;
               const err = isSelected && id ? errors[id] : null;
               const effectiveBestId = paused ? pausedBest : rankedExchanges[0];
@@ -524,8 +544,8 @@ function MainApp() {
  *
  * @returns {JSX.Element} Either the TermsModal component or the MainApp component
  */
-export default function HomePage(): JSX.Element | null {
+export default function HomePage({ initialSide }: { initialSide: OrderSide }): JSX.Element | null {
   const { accepted } = useTermsConsent();
   if (!accepted) return <TermsModal />;
-  return <MainApp />;
+  return <MainApp initialSide={initialSide} />;
 }

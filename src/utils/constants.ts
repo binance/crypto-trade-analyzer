@@ -56,3 +56,17 @@ export const MAX_CARD_SLOTS = 4;
  * The number of rows to display in the live order book.
  */
 export const LIVE_ORDER_BOOK_DEPTH_ROWS = 3;
+
+/**
+ * Example list of trading pairs with their configuration details to be used as initial values when loading the page.
+ */
+export const INITIAL_TRADING_PAIRS_LIST = [
+  { tradingPair: 'BTC/USDT', sizeAsset: 'base', minSize: 0.01, maxSize: 1 },
+  { tradingPair: 'ETH/USDT', sizeAsset: 'base', minSize: 0.5, maxSize: 10 },
+  { tradingPair: 'SOL/USDT', sizeAsset: 'base', minSize: 10, maxSize: 100 },
+  { tradingPair: 'XRP/USDT', sizeAsset: 'base', minSize: 100, maxSize: 1000 },
+  { tradingPair: 'DOGE/USDT', sizeAsset: 'base', minSize: 10000, maxSize: 100000 },
+  { tradingPair: 'LINK/USDT', sizeAsset: 'base', minSize: 100, maxSize: 1000 },
+  { tradingPair: 'ADA/USDT', sizeAsset: 'base', minSize: 2500, maxSize: 25000 },
+  { tradingPair: 'XLM/USDT', sizeAsset: 'base', minSize: 5000, maxSize: 50000 },
+];

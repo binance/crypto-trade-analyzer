@@ -29,6 +29,10 @@ Identify the most cost-efficient exchange by comparing spend and receive amounts
 - **Realistic Fee Modeling**: Take into account taker fees, user tiers, and trading pair discounts.
 - **Tick Size Normalization**: This tool queries exchanges' APIs for the trading pair's tick size (minimum price increment), then normalizes all order books to the largest tick size for fair and consistent price comparisons across exchanges.
 - **Live Best Exchange Badge**: Automatically highlight the best exchange for your specific trade.
+- **Smart Startup Selection of Order Inputs**: On first tool load, to better reflect real-life trading behavior:
+  - Trading Pair: Random selection from a predefined list of popular cross-exchange pairs.
+  - Order size: Random selection within a realistic, market-based range.
+  - Order side: Probabilistic selection of the BUY/SELL side based on market sentiment derived from short-term candlesticks.
 
 ### Supported Exchanges
 
@@ -143,13 +147,14 @@ This app uses Google Analytics 4 (GA4) to understand usage patterns and improve 
 
 The app uses the browser’s storage to reduce API calls and speed up startup.
 
-| Purpose                                | Key pattern                                  | Value shape                                                        |                       TTL |
-| -------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------ | ------------------------: |
-| **USD price cache**                    | `usdconv:v1:<ASSET>` (e.g. `usdconv:v1:BTC`) | `{"ts": <ms>, "data": <number>, "meta": {"source": "<api>"}}`      |    **60s** (configurable) |
-| **Pair list (all)**                    | `pairdir:v1:pairs:<ex1,ex2,...>`             | `{"ts": <ms>, "data": Array<Pair>}`                                | **30 min** (configurable) |
-| **Pair list with supported exchanges** | `pairdir:v1:pairsWithEx:<ex1,ex2,...>`       | `{"ts": <ms>, "data": Array<PairWithExchanges>}`                   | **30 min** (configurable) |
-| **Per-exchange user settings**         | `ACCOUNT_SETTINGS_STORAGE_KEY`               | `Record<ExchangeId, { userTier: string; tokenDiscount: boolean }>` |             **No expiry** |
-| **Google Analytics consent**           | `GA4_ANALYTICS_CONSENT_KEY`                  | `granted \| denied`                                                |             **No expiry** |
+| Purpose                                | Key pattern                                                                                       | Value shape                                                        |                       TTL |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------: |
+| **USD price cache**                    | `usdconv:v1:<ASSET>` (e.g. `usdconv:v1:BTC`)                                                      | `{"ts": <ms>, "data": <number>, "meta": {"source": "<api>"}}`      |    **60s** (configurable) |
+| **Pair list (all)**                    | `pairdir:v1:pairs:<ex1,ex2,...>`                                                                  | `{"ts": <ms>, "data": Array<Pair>}`                                | **30 min** (configurable) |
+| **Pair list with supported exchanges** | `pairdir:v1:pairsWithEx:<ex1,ex2,...>`                                                            | `{"ts": <ms>, "data": Array<PairWithExchanges>}`                   | **30 min** (configurable) |
+| **Market signals cache**               | `marketsignals:v1:candles:global:hours:<HOURS>` (e.g. `marketsignals:v1:candles:global:hours:24`) | `{"ts": <ms>, "data": [{<hour1 candle data>}, ...]}`               |   **1 hr** (configurable) |
+| **Per-exchange user settings**         | `ACCOUNT_SETTINGS_STORAGE_KEY`                                                                    | `Record<ExchangeId, { userTier: string; tokenDiscount: boolean }>` |             **No expiry** |
+| **Google Analytics consent**           | `GA4_ANALYTICS_CONSENT_KEY`                                                                       | `granted \| denied`                                                |             **No expiry** |
 
 ### For developers
 
@@ -174,6 +179,9 @@ The tool uses a few public APIs to stay lightweight and up-to-date:
 - **USD price equivalents:**
   We fetch coin to USD conversion rates from **CryptoCompare** and **CoinGecko**.
   Price results are cached for **60s** to reduce API usage and improve responsiveness.
+
+- **Market Signals:**  
+  To generate a realistic default order side (BUY or SELL), the app uses **Coindesk’s Market Data API**. It fetches recent hourly open/close prices and computes short-term sentiment by analyzing price movements. The model blends long-term and recent interval ratios to derive probabilistic BUY/SELL weights. These results are cached briefly and used only for startup defaults — they never override explicit user choices.
 
 ## 📁 Project Structure
 

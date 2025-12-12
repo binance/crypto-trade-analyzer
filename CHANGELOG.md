@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0 - 2025-12-12
+
+- Added smart startup selection of order inputs to better reflect real-life trading behavior.
+
 ## 1.0.4 - 2025-11-19
 
 - Resolved security vulnerabilities.
