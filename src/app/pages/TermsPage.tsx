@@ -3,16 +3,16 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import type { JSX } from 'react';
 
-import termsMd from '../../../TERMS_OF_USE.md?raw';
+import termsMd from '../../../PRODUCT_TERMS.md?raw';
 import { Link } from 'react-router-dom';
 
 /**
- * Renders the Terms of Use page.
+ * Renders the Product Terms page.
  *
  * This component parses the raw terms content using the `marked` library
  * and displays it as HTML within a styled article element.
  *
- * @returns {JSX.Element} The Terms of Use page component.
+ * @returns {JSX.Element} The Product Terms page component.
  */
 export default function TermsPage(): JSX.Element {
   return (

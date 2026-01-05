@@ -525,7 +525,7 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
           </Link>{' '}
           •{' '}
           <Link className="underline" to="/terms" target="_blank" rel="noopener noreferrer">
-            Terms of Use
+            Product Terms
           </Link>
         </div>
 

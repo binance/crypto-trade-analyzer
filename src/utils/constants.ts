@@ -9,12 +9,12 @@ export const ACCOUNT_SETTINGS_STORAGE_KEY = 'cc:exchange-settings:v1';
 export const GA4_ANALYTICS_CONSENT_KEY = 'ga4:analytics_consent';
 
 /**
- * The current version of the Terms of Use.
+ * The current version of the Product Terms.
  */
-export const TERMS_VERSION = '2025-10-14';
+export const TERMS_VERSION = '2026-01-05';
 
 /**
- * The key for storing whether the user has accepted the Terms of Use.
+ * The key for storing whether the user has accepted the Product Terms.
  */
 export const TERMS_KEY = `terms:accepted:${TERMS_VERSION}`;
 

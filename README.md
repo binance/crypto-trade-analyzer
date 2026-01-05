@@ -14,7 +14,7 @@
 
 **Live App:** [https://binance.github.io/crypto-trade-analyzer](https://binance.github.io/crypto-trade-analyzer)
 
-> **📋 Important:** Please review our [Terms of Use](./TERMS_OF_USE.md) and [License](./LICENSE) before using this tool.  
+> **📋 Important:** Please review our [Product Terms](./PRODUCT_TERMS.md) and [License](./LICENSE) before using this tool.  
 > **📝 Updates:** See the [Changelog](./CHANGELOG.md) for recent changes and version history.
 
 Identify the most cost-efficient exchange by comparing spend and receive amounts from simulated order execution, using real-time order book data and fees.
@@ -239,7 +239,7 @@ The application respects exchange API rate limits through:
 
 ## ⚠️ Disclaimer
 
-This tool is designed for educational and research purposes. Trading cryptocurrencies involves significant risk, and past performance does not guarantee future results. Always verify costs independently before making trades. Exchange fees and policies may change without notice. You may view the full disclaimer in the [Terms of Use](./TERMS_OF_USE.md).
+This tool is designed for educational and research purposes. Trading cryptocurrencies involves significant risk, and past performance does not guarantee future results. Always verify costs independently before making trades. Exchange fees and policies may change without notice. You may view the full disclaimer in the [Product Terms](./PRODUCT_TERMS.md).
 
 ## 📄 License
 

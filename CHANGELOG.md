@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 - 2026-01-05
+
+- Resolved security vulnerabilities.
+- Updated Product Terms.
+
 ## 1.1.0 - 2025-12-12
 
 - Added smart startup selection of order inputs to better reflect real-life trading behavior.

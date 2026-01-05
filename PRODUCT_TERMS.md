@@ -1,0 +1,73 @@
+# Crypto Trade Analyzer Terms of Use
+
+**Version:** v2026-01-05
+
+## 1. INTRODUCTION
+
+**1.1.** These terms and conditions apply to your use of and access to the Crypto Trade Analyzer tool (the **"Crypto Trade Analyzer"**) provided by Binance (these **"Crypto Trade Analyzer Terms"**).
+
+**1.2.** These Crypto Trade Analyzer Terms are supplemental to, form part of and are subject to the [Binance Terms of Use](https://www.binance.com/en/terms) (as updated and amended from time to time, the **"Terms of Use"**). Capitalised terms used in these Crypto Trade Analyzer Terms but not defined shall have the same meaning as in the Terms of Use.
+
+**1.3.** The ADGM Binance Entity providing the Crypto Trade Analyzer is **NEST EXCHANGE LIMITED**, a Recognised Investment Exchange regulated by the Financial Services Regulatory Authority of the Abu Dhabi Global Market, with a registered address Addax Tower, Office 4606, Al Reem Island, Abu Dhabi, UAE (hereinafter referred to as **"Binance"**, **"we"**, **"our"**, **"us"**).
+
+**1.4.** If you access or use (or attempt to access or use) the Crypto Trade Analyzer Terms, you will be deemed to have agreed to these Crypto Trade Analyzer Terms and the Terms of Use. Binance may amend these Crypto Trade Analyzer Terms in its sole and absolute discretion at any time, with or without further notice to you.
+
+**1.5.** In the event of any conflict or inconsistency between these Crypto Trade Analyzer Terms and the Terms of Use, these Crypto Trade Analyzer Terms shall prevail with respect to the services contemplated hereunder, unless expressly stated otherwise.
+
+## 2. ACCESS TO THE CRYPTO TRADE ANALYZER AND TERMINATION
+
+**2.1.** By accessing the Crypto Trade Analyzer, you represent and warrant that accessing and/or using the Crypto Trade Analyzer is not unlawful or prohibited under the laws of your jurisdiction nor under the laws of any other jurisdiction to which you may be subject.
+
+**2.2.** We may make any improvement, modifications or updates to the Crypto Trade Analyzer, including but not limited to changes and updates to the underlying software, infrastructure, security protocols, technical configurations or service features (the **"Updates"**) from time-to-time. We may also remove functionality from time-to-time. Your continued access and use of the Crypto Trade Analyzer are subject to such Updates and any patches, system upgrades, bug fixes, feature modifications, feature removals or other maintenance work that arise out of or in connection with any Updates. We are not liable for any failure by you to use any Updates in the manner specified or required by us.
+
+**2.3.** You agree and confirm your understanding that you are prohibited from using the Crypto Trade Analyzer:
+
+- for commercial purposes;
+- as a basis for the provision of advice or any professional services to any third party; or
+- to attempt to do any of the foregoing or any of the other prohibited uses or activities as described in the Terms of Use.
+
+## 3. NATURE OF THE CRYPTO TRADE ANALYZER
+
+**3.1.** The Crypto Trade Analyzer is a tool designed to provide an analysis of the overall cost and the net return (after deducting fees) in respect of executing the same order inputs on two or more centralized exchange platforms (the **"Reference Exchanges"**), including the Binance Platform, using the live order book of each Reference Exchange. The Crypto Trade Analyzer takes into account a number of factors which can impact on the overall cost of a trade, including but not limited to trading fees and order book slippage, based on publicly available information, through open source code.
+
+**3.2.** The Crypto Trade Analyzer is to be used for reference and information purposes only. Your use of the Crypto Trade Analyzer shall not be construed as an inducement to trade on the Binance Platform over any Reference Exchange or any other platform, or to trade at all. The Crypto Trade Analyzer is not sponsored by, endorsed by or affiliated with any Reference Exchange other than the Binance Platform. The Crypto Trade Analyzer provides an analysis as of the exact time the analysis is generated only.
+
+**3.3.** We may add or remove Reference Exchanges from the Crypto Trade Analyzer at any time and for any reason. The addition, removal or omission of any exchange platform from the list of Reference Exchanges is in no way a representation of any nature in respect of that exchange platform.
+
+**3.4.** If you make the decision to trade on the Binance Platform following your use of the Crypto Trade Analyzer, your ability to trade remains subject to you fulfilling the relevant eligibility requirements. We are under no obligation to allow you to trade on the Binance Platform if you have used the Crypto Trade Analyzer.
+
+## 4. DISCLAIMER OF WARRANTIES AND LIMITATION OF LIABILITY; CONSENTS
+
+**4.1.** We make no warranty or representation, express or implied regarding the Crypto Trade Analyzer, including, without limitation, that any underlying data is accurate in respect of any Reference Exchange or that the Crypto Trade Analyzer provides an accurate account of the overall cost or the net return to you on any Reference Exchange at any time, including but not limited to where you are subject to a special discount which is not publicly available.
+
+**4.2.** By using the Crypto Trade Analyzer, you acknowledge and agree that use of the Crypto Trade Analyzer is entirely at your own risk and, to the fullest extent permitted by law, we shall not be liable for any losses, damages, liabilities, cost, claim, or expense arising from your access or use of the Crypto Trade Analyzer.
+
+**4.3.** Neither Binance, nor any affiliate or representative of Binance, makes any representation or warranty that the Crypto Trade Analyzer is appropriate for any user or in any particular location, nor will continue to be available or appropriate for any user or in any particular location. In particular, the Crypto Trade Analyzer presents information on an **"as is"** basis and this information should **not** be construed as financial advice, investment advice, trading advice or a recommendation of any kind by Binance. You are solely responsible for your investment decisions and should conduct your own research and analysis. You are strongly encouraged to carefully review these Crypto Trade Analyzer Terms and seek independent professional advice before entering into any trades.
+
+**4.4.** By accepting these Crypto Trade Analyzer Terms, you hereby unconditionally and irrevocably confirm that you understand, accept and assume full responsibility for using Crypto Trade Analyzer together with any and all associated risks with your access and/or use of Crypto Trade Analyzer.
+
+**4.5.** For the avoidance of doubt, this Clause 4 is additional to any provisions on limitation of liability in the Terms of Use.
+
+## 5. INDEMNITY
+
+**5.1.** To the fullest extent permitted by Applicable Law, you irrevocably agree and undertake that you will indemnify, defend and hold harmless Binance from and against any claims arising out of, in connection with or related to:
+
+- your access to or use of the Crypto Trade Analyzer;
+- your violation of these Crypto Trade Analyzer Terms; and
+- your violation, misappropriation or infringement of any rights of another (including intellectual property rights or privacy rights).
+
+**5.2.** You agree and undertake to promptly notify Binance of any third-party claims, cooperate with Binance in defending such claims and pay all fees, costs and expenses associated with defending such claims (including legal fees and expenses). You also agree that the Binance will have control of the defence or settlement, at Binance's sole option, of any third-party claims.
+
+**5.3.** For the avoidance of doubt, this Clause 5 is additional to any provisions on indemnity in the Terms of Use.
+
+## 6. DISPUTES, GOVERNING LAW, JURISDICTION AND ARBITRATION
+
+The clauses relating to Notice of claim - Negotiation, then Arbitration; Agreement to arbitrate; Governing law; and Class action waiver of the Terms of Use shall apply to any disputes or claims relating to, arising out of or in connection with these Crypto Trade Analyzer Terms, including your assent to these Crypto Trade Analyzer Terms.
+
+## 7. TRANSLATIONS
+
+This document may have been translated and published in different languages. In the event of any inconsistency, misstatements, omissions, or errors appearing in any translated version, the English version shall prevail.
+
+---
+
+_Disclaimer: Digital asset prices are subject to high market risk and price volatility. The value of your investment may go down or up, and you may not get back the amount invested. You are solely responsible for your investment decisions and Binance is not liable for any losses you may incur. Past performance is not a reliable predictor of future performance. You should only invest in products you are familiar with and where you understand the risks. You should carefully consider your investment experience, financial situation, investment objectives and risk tolerance and consult an independent financial adviser prior to making any investment. This material should not be construed as financial advice. For more information, see our [Terms of Use](https://www.binance.com/en/terms) and [Risk Warning](https://www.binance.com/en/risk-warning)._

@@ -3,17 +3,17 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { useTermsConsent } from '../hooks/useTermsConsent';
-import termsMd from '../../../TERMS_OF_USE.md?raw';
+import termsMd from '../../../PRODUCT_TERMS.md?raw';
 import { Link } from 'react-router-dom';
 
 /**
- * A modal dialog that displays the Terms of Service and requires users to scroll to the end
+ * A modal dialog that displays the Product Terms and requires users to scroll to the end
  * before accepting. The modal cannot be dismissed until the user accepts the terms.
  *
  * @returns A modal dialog component or null if terms are already accepted
  */
 export default function TermsModal(): JSX.Element | null {
-  // Terms of Service content
+  // Product Terms content
   const { accepted, accept } = useTermsConsent();
   const open = !accepted;
 
@@ -150,11 +150,11 @@ export default function TermsModal(): JSX.Element | null {
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.75rem)' }}
         >
           <p className="text-[11px] text-zinc-500 dark:text-zinc-400 hidden sm:block">
-            Scroll to the end to accept Terms of Use.
+            Scroll to the end to accept Product Terms.
           </p>
           {!atEnd && (
             <p className="text-[11px] text-zinc-500 dark:text-zinc-400 sm:hidden w-fit text-left mt-2">
-              Scroll to the end to accept Terms of Use.
+              Scroll to the end to accept Product Terms.
             </p>
           )}
           <button
@@ -168,8 +168,8 @@ export default function TermsModal(): JSX.Element | null {
               disabled:opacity-50 disabled:cursor-not-allowed
             `}
             aria-disabled={!atEnd}
-            aria-label="Accept Terms of Use"
-            title={!atEnd ? 'Scroll to the end to enable' : 'Accept Terms of Use'}
+            aria-label="Accept Product Terms"
+            title={!atEnd ? 'Scroll to the end to enable' : 'Accept Product Terms'}
           >
             I Agree
           </button>
