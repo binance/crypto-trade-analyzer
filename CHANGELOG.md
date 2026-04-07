@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.4 - 2026-04-07
+
+- Resolved security vulnerabilities.
+
 ## 1.1.3 - 2026-03-02
 
 - Resolved security vulnerabilities.
