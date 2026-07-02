@@ -1,5 +1,5 @@
 import { GA4_ANALYTICS_CONSENT_KEY } from './constants';
-import type { OrderSide } from '../core/interfaces/order-book';
+import type { MarketType, OrderSide } from '../core/interfaces/order-book';
 import type { PerExchangeSettings } from '../app/types';
 
 type GA4Window = Window & {
@@ -145,8 +145,19 @@ export function sendEvent(name: string, props?: Record<string, unknown>) {
  * @param base - The base asset of the selected trading pair.
  * @param quote - The quote asset of the selected trading pair.
  */
-export function evtTradingPairSelected(tradingPair: string, base: string, quote: string) {
-  sendEvent('trading_pair_selected', { trading_pair: tradingPair, base, quote, ts: Date.now() });
+export function evtTradingPairSelected(
+  tradingPair: string,
+  base: string,
+  quote: string,
+  market: MarketType
+) {
+  sendEvent('trading_pair_selected', {
+    trading_pair: tradingPair,
+    base,
+    quote,
+    market,
+    ts: Date.now(),
+  });
 }
 
 /**
@@ -155,8 +166,8 @@ export function evtTradingPairSelected(tradingPair: string, base: string, quote:
  * @param exchanges - An array of exchange names selected by the user.
  * The exchanges are joined into a comma-separated string and sent along with a timestamp.
  */
-export function evtExchangesSelected(exchanges: string[]) {
-  sendEvent('exchanges_selected', { exchanges: exchanges.join(','), ts: Date.now() });
+export function evtExchangesSelected(exchanges: string[], market: MarketType) {
+  sendEvent('exchanges_selected', { exchanges: exchanges.join(','), market, ts: Date.now() });
 }
 
 /**
@@ -189,6 +200,7 @@ export function evtCalcPerformed(params: {
   binanceComparator?: string;
   binanceWinningPct?: number;
   binanceLosingPct?: number;
+  market: MarketType;
 }) {
   const p = {
     trading_pair: params.tradingPair,
@@ -220,7 +232,7 @@ export function evtCalcPerformed(params: {
     binance_losing_pct: params.binanceLosingPct ?? 0,
     ts: Date.now(),
   };
-  sendEvent('calc_performed', p);
+  sendEvent('calc_performed', { ...p, market: params.market });
 }
 
 /**
@@ -239,7 +251,7 @@ export function evtCalcPerformed(params: {
  *
  * The event is sent with the name 'calc_latency' and includes the exchange, latency value, and bucket.
  */
-export function evtCalcLatencyMs(exchange: string, ms: number) {
+export function evtCalcLatencyMs(exchange: string, ms: number, market: MarketType) {
   const hidden = typeof document !== 'undefined' && document.hidden;
   if (hidden) return;
 
@@ -260,6 +272,7 @@ export function evtCalcLatencyMs(exchange: string, ms: number) {
     exchange,
     calc_latency_ms: Math.floor(ms),
     calc_latency_bucket: bucket,
+    market,
   });
 }
 
@@ -277,7 +290,7 @@ export function evtCalcLatencyMs(exchange: string, ms: number) {
  * - '500-1000' for latencies between 500ms and 1000ms
  * - '>=1000' for latencies greater than or equal to 1000ms
  */
-export function evtOrderbookPushLatencyMs(exchange: string, ms: number) {
+export function evtOrderbookPushLatencyMs(exchange: string, ms: number, market: MarketType) {
   const hidden = typeof document !== 'undefined' && document.hidden;
   if (hidden) return;
 
@@ -298,6 +311,7 @@ export function evtOrderbookPushLatencyMs(exchange: string, ms: number) {
     exchange,
     order_book_latency_ms: Math.floor(ms),
     order_book_latency_bucket: bucket,
+    market,
   });
 }
 
@@ -323,6 +337,7 @@ export function evtExchangeStatus(params: {
   status: 'up' | 'down';
   reason?: string;
   down_duration_ms?: number;
+  market: MarketType;
 }) {
   sendEvent('exchange_status', {
     exchange: params.exchange,
@@ -331,6 +346,7 @@ export function evtExchangeStatus(params: {
     ...(typeof params.down_duration_ms === 'number' && isFinite(params.down_duration_ms)
       ? { down_duration_ms: Math.max(0, Math.floor(params.down_duration_ms)) }
       : {}),
+    market: params.market,
     ts: Date.now(),
   });
 }
@@ -341,8 +357,8 @@ export function evtExchangeStatus(params: {
  *
  * @param exchange - The name of the cryptocurrency exchange being accessed
  */
-export function evtExchangeSessionStart(exchange: string) {
-  sendEvent('exchange_session_start', { exchange, ts: Date.now() });
+export function evtExchangeSessionStart(exchange: string, market: MarketType) {
+  sendEvent('exchange_session_start', { exchange, market, ts: Date.now() });
 }
 
 /**
@@ -351,8 +367,8 @@ export function evtExchangeSessionStart(exchange: string) {
  * @param exchange - The name of the exchange where the session ended
  * @param reason - Optional reason for the session ending. Defaults to empty string if not provided
  */
-export function evtExchangeSessionEnd(exchange: string, reason?: string) {
-  sendEvent('exchange_session_end', { exchange, reason: reason ?? '', ts: Date.now() });
+export function evtExchangeSessionEnd(exchange: string, market: MarketType, reason?: string) {
+  sendEvent('exchange_session_end', { exchange, market, reason: reason ?? '', ts: Date.now() });
 }
 
 /**
@@ -376,6 +392,7 @@ export function evtExchangeSessionSummary(params: {
   downtime_ms: number;
   uptime_ratio: number;
   reason?: string;
+  market: MarketType;
 }) {
   const props = {
     exchange: params.exchange,
@@ -383,6 +400,7 @@ export function evtExchangeSessionSummary(params: {
     downtime_ms: Math.max(0, Math.floor(params.downtime_ms)),
     uptime_ratio: Math.max(0, Math.min(1, params.uptime_ratio)),
     reason: params.reason ?? '',
+    market: params.market,
     ts: Date.now(),
   };
   sendEvent('exchange_session_summary', props);

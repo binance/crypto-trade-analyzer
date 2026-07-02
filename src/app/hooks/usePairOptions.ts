@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PairDirectory } from '../../core/services/pair-directory';
 import type { ExchangeId } from '../../exchanges';
+import type { MarketType } from '../../core/interfaces/order-book';
 import type { PairMeta } from '../types';
 
 type PairItem = {
@@ -27,8 +28,8 @@ type PairItem = {
  * - Handles both `exchanges` and `byEx` fields defensively for compatibility.
  * - Cleans up asynchronous effects to prevent state updates after unmount.
  */
-export function usePairOptions() {
-  const pairDir = useMemo(() => new PairDirectory(), []);
+export function usePairOptions(marketType: MarketType = 'spot') {
+  const pairDir = useMemo(() => new PairDirectory({ market: marketType }), [marketType]);
   const [pairOptions, setPairOptions] = useState<string[]>([]);
   const [pairMeta, setPairMeta] = useState<Record<string, PairMeta>>({});
   const [loadingPairs, setLoadingPairs] = useState(false);

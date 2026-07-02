@@ -9,7 +9,7 @@ import { TradeBreakdown } from './TradeBreakdown';
 import { TimestampDetails } from './TimestampDetails';
 import { LIVE_ORDER_BOOK_DEPTH_ROWS } from '../../utils/constants';
 import type { ExchangeId } from '../../exchanges';
-import type { OrderBook, OrderSide } from '../../core/interfaces/order-book';
+import type { MarketType, OrderBook, OrderSide } from '../../core/interfaces/order-book';
 import type { OpenInfoKey, PerExchangeSettings } from '../types';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
 
@@ -93,6 +93,7 @@ const parseLiquidityError = (err?: string | null): ParsedLiquidity | null => {
 export function ExchangeCard({
   exchangeId,
   exchangeName,
+  marketType,
   supportsTokenDiscount,
   defaultTier,
   userTiers,
@@ -104,6 +105,7 @@ export function ExchangeCard({
   books,
   costBreakdownMap,
   precision,
+  bookPrecision,
   error,
   tradingPair,
   size,
@@ -111,9 +113,11 @@ export function ExchangeCard({
   lastCalculationTime,
   paused,
   onChangeSettings,
+  className: extraClassName,
 }: {
   exchangeName: string;
   exchangeId: ExchangeId;
+  marketType: MarketType;
   supportsTokenDiscount?: boolean;
   defaultTier: string;
   userTiers?: string[];
@@ -125,6 +129,7 @@ export function ExchangeCard({
   books?: Record<ExchangeId, (OrderBook & { tradingPair: string }) | undefined>;
   costBreakdownMap: Record<ExchangeId, CostBreakdown>;
   precision?: number;
+  bookPrecision?: number;
   error?: string | null;
   tradingPair: string;
   size: number;
@@ -132,6 +137,7 @@ export function ExchangeCard({
   lastCalculationTime?: Date;
   paused?: boolean;
   onChangeSettings: (p: Partial<PerExchangeSettings>) => void;
+  className?: string;
 }): JSX.Element {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [feesOpen, setFeesOpen] = useState(false);
@@ -148,7 +154,7 @@ export function ExchangeCard({
     !!exchangeId && exchangeId ? (tradingPair ? !supportedExchanges.has(exchangeId) : true) : false;
   const costBreakdown = costBreakdownMap[exchangeId as ExchangeId];
   const { base, quote } = parsePair(tradingPair);
-  const tradeHref = getExchangeTradeHref(base, quote, exchangeName);
+  const tradeHref = getExchangeTradeHref(base, quote, exchangeName, marketType);
   const idx = Array.from({ length: LIVE_ORDER_BOOK_DEPTH_ROWS }, (_, i) => i);
 
   /**
@@ -274,6 +280,7 @@ export function ExchangeCard({
         isBest && !unsupported && !error && !waitingForLiveOrderBook && costBreakdown
           ? 'card-best'
           : '',
+        extraClassName ?? '',
       ].join(' ')}
       data-ex={exchangeId ?? 'empty'}
     >
@@ -294,8 +301,8 @@ export function ExchangeCard({
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-xs font-medium opacity-90 hover:opacity-100 underline underline-offset-2 focus:outline-none focus-visible:underline focus-visible:opacity-100 rounded-sm"
-              aria-label={`Open ${base}/${quote} spot on ${exchangeName}`}
-              title={`Open ${base}/${quote} on ${exchangeName} (spot)`}
+              aria-label={`Open ${base}/${quote} ${marketType} on ${exchangeName}`}
+              title={`Open ${base}/${quote} on ${exchangeName} (${marketType})`}
             >
               {' '}
               Trade
@@ -308,7 +315,7 @@ export function ExchangeCard({
 
       {!isSelected ? (
         <div className="h-40 flex items-center justify-center text-muted text-sm">
-          Not selected. Click on <span className="mx-1 underline">Exchanges</span> to add more.
+          Not selected. Click on "Exchanges" to add more.
         </div>
       ) : (
         <div className={unsupported ? 'pointer-events-none opacity-60' : ''}>
@@ -317,7 +324,7 @@ export function ExchangeCard({
             idx={idx}
             base={base}
             quote={quote}
-            precision={precision}
+            precision={bookPrecision ?? precision}
             waitingForLiveOrderBook={waitingForLiveOrderBook}
           />
 
@@ -424,6 +431,7 @@ export function ExchangeCard({
                     paused={paused}
                     openInfoKey={openInfoKey}
                     setOpenInfoKey={setOpenInfoKey}
+                    marketType={marketType}
                   />
 
                   <div className="min-w-0">
@@ -431,6 +439,7 @@ export function ExchangeCard({
                       exchangeId={exchangeId}
                       costBreakdownMap={costBreakdownMap}
                       precision={precision}
+                      pricePrecision={bookPrecision ?? precision}
                       feesOpen={feesOpen}
                       openInfoKey={openInfoKey}
                       setFeesOpen={setFeesOpen}

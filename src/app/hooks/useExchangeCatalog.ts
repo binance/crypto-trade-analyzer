@@ -1,19 +1,21 @@
 import { useMemo } from 'react';
-import { EXCHANGE_REGISTRY, type ExchangeId } from '../../exchanges';
+import { getRegistry, type ExchangeId } from '../../exchanges';
+import type { MarketType } from '../../core/interfaces/order-book';
 
 /**
- * Custom React hook that provides exchange catalog data.
+ * Custom React hook that provides exchange catalog data for the active market.
  *
- * - `ids`: An array of all exchange IDs from the registry.
+ * - `ids`: An array of exchange IDs available in the given market (futures omits Coinbase).
  * - `names`: A mapping from exchange IDs to their display names.
  * - `cardOrder`: An array of exchange IDs sorted by their display names.
  *
  * Uses memoization to optimize performance and prevent unnecessary recalculations.
  *
+ * @param marketType - The active market ('spot' | 'futures'). Defaults to 'spot'.
  * @returns An object containing `ids`, `names`, and `cardOrder` for use in components.
  */
-export function useExchangeCatalog() {
-  const ids = useMemo(() => Object.keys(EXCHANGE_REGISTRY) as ExchangeId[], []);
+export function useExchangeCatalog(marketType: MarketType = 'spot') {
+  const ids = useMemo(() => Object.keys(getRegistry(marketType)) as ExchangeId[], [marketType]);
   const names = useMemo(
     () => Object.fromEntries(ids.map((id) => [id, id])) as Record<ExchangeId, string>,
     [ids]

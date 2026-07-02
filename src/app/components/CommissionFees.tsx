@@ -21,6 +21,7 @@ import type { OpenInfoKey } from '../types';
 export function CommissionFees({
   costBreakdown,
   precision,
+  adaptiveQuote = false,
   feesOpen,
   openInfoKey,
   setFeesOpen,
@@ -28,6 +29,7 @@ export function CommissionFees({
 }: {
   costBreakdown: CostBreakdown;
   precision?: number;
+  adaptiveQuote?: boolean;
   feesOpen: boolean;
   openInfoKey: OpenInfoKey | null;
   setFeesOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -55,14 +57,16 @@ export function CommissionFees({
         </td>
         <td className="py-2 text-right font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">
           <span className="block text-right tabular font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">
-            {cryptoNumberFormat(costBreakdown.tradingFee.amountInQuote!, {
-              ...(precision && {
-                minDecimals: precision > 2 ? precision : 2,
-                maxDecimals: precision,
-                minSig: precision,
-                maxSig: precision,
-              }),
-            })}
+            {adaptiveQuote
+              ? fiatNumberFormat(costBreakdown.tradingFee.amountInQuote!)
+              : cryptoNumberFormat(costBreakdown.tradingFee.amountInQuote!, {
+                  ...(precision && {
+                    minDecimals: precision > 2 ? precision : 2,
+                    maxDecimals: precision,
+                    minSig: precision,
+                    maxSig: precision,
+                  }),
+                })}
           </span>
         </td>
         <td className="py-2 text-right font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 - 2026-07-02
+
+- Added Futures Perpetuals market support.
+- Added share button to share the current market view.
+
 ## 1.1.6 - 2026-06-18
 
 - Resolved security vulnerabilities.

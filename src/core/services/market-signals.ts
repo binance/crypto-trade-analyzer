@@ -5,6 +5,7 @@ import {
   removeKeyFromLocalStorage,
   isFresh,
 } from '../../utils/local-storage';
+import { REST_API_URL as BINANCE_REST_API_URL } from '../../exchanges/binance/utils/constants';
 import type { OrderSide } from '../../core/interfaces/order-book';
 
 export type Candle = {
@@ -40,15 +41,7 @@ type Options = {
   recentWeight?: number;
 };
 
-type CoindeskCandle = {
-  UNIT?: string;
-  TIMESTAMP?: number;
-  OPEN?: number;
-  HIGH?: number;
-  LOW?: number;
-  CLOSE?: number;
-  [key: string]: unknown;
-};
+type BinanceKlineRow = [number, string, string, string, string, string, ...unknown[]];
 
 type Interval = {
   dir: 'green' | 'red';
@@ -58,8 +51,9 @@ type Interval = {
 /**
  * MarketSignals service for analyzing cryptocurrency market sentiment based on historical candle data.
  *
- * This class fetches historical market data from Coindesk, normalizes it into candle objects,
- * and computes buy/sell sentiment probabilities based on price movement patterns.
+ * This class fetches historical BTC/USDT hourly candles from Binance, normalizes them into candle
+ * objects, and computes buy/sell sentiment probabilities based on price movement patterns. BTC is
+ * used as the broad market-direction proxy (it dominates total-market moves).
  *
  * Features:
  * - Caches candle data in memory and localStorage to minimize API calls
@@ -96,9 +90,9 @@ export class MarketSignals {
   }
 
   /**
-   * Fetches raw candlestick data from the Coindesk API.
+   * Fetches raw BTC/USDT hourly klines from the Binance public API.
    *
-   * @returns {Promise<CoindeskCandle[]>} A promise that resolves to an array of candlestick data.
+   * @returns {Promise<BinanceKlineRow[]>} A promise that resolves to an array of kline rows.
    * @throws {Error} Throws an error if the HTTP request fails after 3 retry attempts.
    * @throws {Error} Throws an error if the response status is not ok.
    * @throws {Error} Throws an error if the returned data is not a valid array or contains fewer than 2 candles.
@@ -106,18 +100,17 @@ export class MarketSignals {
    * @private
    * @async
    */
-  private async fetchRawCandles(): Promise<CoindeskCandle[]> {
-    const url = `https://data-api.coindesk.com/overview/v1/historical/marketcap/all/assets/hours?limit=${this.hoursBack}`;
+  private async fetchRawCandles(): Promise<BinanceKlineRow[]> {
+    const url = `${BINANCE_REST_API_URL}/klines?symbol=BTCUSDT&interval=1h&limit=${this.hoursBack}`;
 
     const res = await withHttpRetry(() => fetch(url), { maxAttempts: 3 });
-    if (!res.ok) throw new Error(`Failed to fetch Coindesk historical data ${res.status}`);
+    if (!res.ok) throw new Error(`Failed to fetch Binance klines ${res.status}`);
 
     const json = await res.json();
-    const candles = json?.Data;
-    if (!Array.isArray(candles) || candles.length < 2)
-      throw new Error('Not enough candles returned from Coindesk');
+    if (!Array.isArray(json) || json.length < 2)
+      throw new Error('Not enough candles returned from Binance');
 
-    return candles as CoindeskCandle[];
+    return json as BinanceKlineRow[];
   }
 
   /**
@@ -128,12 +121,13 @@ export class MarketSignals {
   private async loadFreshCandles(): Promise<Candle[]> {
     const raw = await this.fetchRawCandles();
     const normalized = raw
-      .map((c) => {
-        const ts = Number(c.TIMESTAMP ?? 0) * 1000;
-        const open = Number(c.OPEN);
-        const high = Number(c.HIGH);
-        const low = Number(c.LOW);
-        const close = Number(c.CLOSE);
+      .map((row) => {
+        // [openTime, O, H, L, C, vol, ...]
+        const ts = Number(row[0]);
+        const open = Number(row[1]);
+        const high = Number(row[2]);
+        const low = Number(row[3]);
+        const close = Number(row[4]);
 
         if (
           !Number.isFinite(ts) ||
@@ -150,7 +144,7 @@ export class MarketSignals {
           high,
           low,
           close,
-          raw: c as Record<string, unknown>,
+          raw: row as unknown as Record<string, unknown>,
         };
       })
       .filter((x): x is Candle => !!x);

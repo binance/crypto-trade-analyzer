@@ -115,6 +115,10 @@ export interface CostBreakdown {
   execution: CostItem;
   tradingFee: CostItem;
   slippage: CostItem;
+  funding?: CostItem;
+  holdingPeriodHours?: number;
+  fundingIntervalHours?: number;
+  fundingMissing?: boolean;
   netBaseReceived: number;
   netQuoteReceived: number;
   totalQuote: number;

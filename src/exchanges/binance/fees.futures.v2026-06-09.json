@@ -1,0 +1,132 @@
+{
+  "exchange": "Binance",
+  "version": "futures-2026-06-09",
+  "userTiers": [
+    "Regular User",
+    "VIP1",
+    "VIP2",
+    "VIP3",
+    "VIP4",
+    "VIP5",
+    "VIP6",
+    "VIP7",
+    "VIP8",
+    "VIP9"
+  ],
+  "supportsTokenDiscount": true,
+  "schedule": {
+    "name": "usdt-m-perpetual",
+    "defaultTier": "Regular User",
+    "tiers": {
+      "Regular User": {
+        "maker": 0.0002,
+        "taker": 0.0005
+      },
+      "VIP1": {
+        "maker": 0.00018,
+        "taker": 0.0005
+      },
+      "VIP2": {
+        "maker": 0.00016,
+        "taker": 0.0004
+      },
+      "VIP3": {
+        "maker": 0.00012,
+        "taker": 0.00032
+      },
+      "VIP4": {
+        "maker": 0.0001,
+        "taker": 0.0003
+      },
+      "VIP5": {
+        "maker": 0.00008,
+        "taker": 0.00027
+      },
+      "VIP6": {
+        "maker": 0.00006,
+        "taker": 0.00025
+      },
+      "VIP7": {
+        "maker": 0.00004,
+        "taker": 0.00022
+      },
+      "VIP8": {
+        "maker": 0.00002,
+        "taker": 0.0002
+      },
+      "VIP9": {
+        "maker": 0,
+        "taker": 0.00017
+      }
+    }
+  },
+  "modifiers": [
+    {
+      "id": "USDC pair fee",
+      "match": {
+        "quoteAssets": ["USDC"]
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "Regular User": {
+            "maker": 0,
+            "taker": 0.0004
+          },
+          "VIP1": {
+            "maker": 0,
+            "taker": 0.0004
+          },
+          "VIP2": {
+            "maker": 0,
+            "taker": 0.00032
+          },
+          "VIP3": {
+            "maker": 0,
+            "taker": 0.000256
+          },
+          "VIP4": {
+            "maker": 0,
+            "taker": 0.000165
+          },
+          "VIP5": {
+            "maker": 0,
+            "taker": 0.000149
+          },
+          "VIP6": {
+            "maker": 0,
+            "taker": 0.000138
+          },
+          "VIP7": {
+            "maker": 0,
+            "taker": 0.000121
+          },
+          "VIP8": {
+            "maker": 0,
+            "taker": 0.00011
+          },
+          "VIP9": {
+            "maker": 0,
+            "taker": 0.000094
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": true,
+        "withOtherModifiers": true,
+        "exclusive": false
+      }
+    }
+  ],
+  "tokenDiscount": {
+    "id": "BNB futures 10% discount",
+    "label": "Pay fee in BNB",
+    "type": "percentage",
+    "value": 0.1,
+    "requires": {
+      "feeAsset": "BNB"
+    },
+    "appliesTo": ["maker", "taker"],
+    "order": "after_modifiers"
+  }
+}

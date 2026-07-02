@@ -6,6 +6,7 @@ import { cryptoNumberFormat, fiatNumberFormat } from '../../utils/utils';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import type { ExchangeId } from '../../exchanges';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
+import type { MarketType } from '../../core/interfaces/order-book';
 import type { OpenInfoKey } from '../types';
 
 /**
@@ -18,6 +19,7 @@ import type { OpenInfoKey } from '../types';
  * @param paused - Indicates if the comparison is currently paused.
  * @param openInfoKey - The key indicating which info card is currently open.
  * @param setOpenInfoKey - Setter for toggling the open info card.
+ * @param marketType - The active market ('spot' or 'futures'), used to tailor info descriptions.
  *
  * @returns A JSX element rendering the trade results, spend/receive breakdown, and comparison dropdown.
  */
@@ -28,6 +30,7 @@ export function Results({
   paused,
   openInfoKey,
   setOpenInfoKey,
+  marketType,
 }: {
   exchangeId: ExchangeId;
   costBreakdownMap: Record<ExchangeId, CostBreakdown | undefined>;
@@ -35,7 +38,9 @@ export function Results({
   paused: boolean | undefined;
   openInfoKey: OpenInfoKey | null;
   setOpenInfoKey: React.Dispatch<React.SetStateAction<OpenInfoKey | null>>;
+  marketType: MarketType;
 }): JSX.Element {
+  const isFutures = marketType === 'futures';
   const [showExchangeName, setShowExchangeName] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -44,8 +49,14 @@ export function Results({
   const receivedAsset = isBuy
     ? costBreakdown.baseAsset.toUpperCase()
     : costBreakdown.quoteAsset.toUpperCase();
-  const receivedAmount = isBuy ? costBreakdown.netBaseReceived : costBreakdown.netQuoteReceived;
-  const spendUsd = costBreakdown.totalTradeUsd;
+
+  const fundingUsd = costBreakdown.funding?.usd ?? 0;
+  const fundingQuote = costBreakdown.funding?.amount ?? 0;
+
+  const receivedAmount = isBuy
+    ? costBreakdown.netBaseReceived
+    : costBreakdown.netQuoteReceived - fundingQuote;
+  const spendUsd = isBuy ? costBreakdown.totalTradeUsd + fundingUsd : costBreakdown.totalTradeUsd;
 
   const { peers, compareId, setCompareId, savedUsd, dropdown } = useSavedVs({
     exchangeId,
@@ -121,8 +132,9 @@ export function Results({
 
         {openInfoKey === 'Receive' && (
           <div className="col-span-2 mt-1 mb-1 info-card text-sm">
-            Net amount you end up receiving from this trade. It already reflects price impact and
-            fees.
+            {isFutures
+              ? 'Position size this trade opens. It already reflects price impact and fees, plus projected funding over your holding period.'
+              : 'Net amount you end up receiving from this trade. It already reflects price impact and fees.'}
           </div>
         )}
 
@@ -139,8 +151,9 @@ export function Results({
 
         {openInfoKey === 'Spend' && (
           <div className="col-span-2 mt-1 mb-1 info-card text-sm">
-            Total order cost in USD to execute this trade. Includes execution notional and
-            commission fees, with price impact accounted for.
+            {isFutures
+              ? 'Total order cost in USD to execute this trade. Includes execution notional and commission fees, with price impact accounted for, plus projected funding over your holding period.'
+              : 'Total order cost in USD to execute this trade. Includes execution notional and commission fees, with price impact accounted for.'}
           </div>
         )}
 
@@ -263,17 +276,25 @@ export function Results({
       </dl>
 
       {openInfoKey === 'SaveVs' && (
-        <tr>
-          <td colSpan={3} className="pb-3 pt-2">
-            <div className="info-card text-sm">
-              “Save vs” is the USD difference between this and the chosen exchange. For buys: if
-              size is in base we use USD spent; if in quote we take net base received (after fees).
-              For sells: if size is in base we use USD received (minus any fee paid in a third
-              token); if in quote we take the base effectively spent (including base-equivalent
-              fees).
-            </div>
-          </td>
-        </tr>
+        <div className="info-card text-sm mt-2 mb-3">
+          Represents the USD difference between this and the selected exchange.
+          <ul className="mt-1 list-disc pl-5 space-y-0.5">
+            <li>
+              Buy orders
+              <ul className="list-disc pl-5 space-y-0.5">
+                <li>If the order size is specified in base, we compare the spend.</li>
+                <li>If the order size is specified in quote, we compare the receive.</li>
+              </ul>
+            </li>
+            <li>
+              Sell orders
+              <ul className="list-disc pl-5 space-y-0.5">
+                <li>If the order size is specified in base, we compare the receive.</li>
+                <li>If the order size is specified in quote, we compare the spend.</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
       )}
     </section>
   );

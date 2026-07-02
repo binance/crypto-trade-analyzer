@@ -10,6 +10,8 @@ export interface OrderBook {
 
 export type OrderSide = 'buy' | 'sell';
 
+export type MarketType = 'spot' | 'futures';
+
 export type OrderSizeAsset = 'base' | 'quote';
 
 export type OrderType = 'market';

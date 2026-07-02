@@ -56,6 +56,7 @@ type BookState = {
   lastEmit: number;
   syncing: boolean;
   lastSeq?: number;
+  lastU?: number;
   buffer: BufferedDatum[];
   interval?: ReturnType<typeof setInterval>;
 };
@@ -73,6 +74,8 @@ export interface BybitBookRestResponse {
  */
 export type BybitBookClientOptions = {
   socketUrl?: string;
+  restUrl?: string;
+  category?: 'spot' | 'linear';
   depthLimit?: number;
   emitIntervalMs?: number;
   maxBufferedDiffs?: number;
@@ -172,23 +175,19 @@ export class BybitBookClient implements BookWsClient {
     console.debug(`Processing ${state.buffer.length} buffered updates for Bybit ${symbol}`);
 
     state.buffer.sort((x, y) => {
-      const seqX = x.seq;
-      const seqY = y.seq;
-
-      // If both have sequence numbers, use them
-      if (seqX != null && seqY != null) return seqX - seqY;
-
-      // Fall back to timestamp
-      const tsX = x.ts ?? 0;
-      const tsY = y.ts ?? 0;
-      return tsX - tsY;
+      if (x.u != null && y.u != null) return x.u - y.u;
+      if (x.seq != null && y.seq != null) return x.seq - y.seq;
+      return (x.ts ?? 0) - (y.ts ?? 0);
     });
 
-    // Process updates with sequence validation
     for (const update of state.buffer) {
+      // Drop anything already covered by the snapshot (u <= lastU).
+      if (update.u != null && state.lastU != null && update.u <= state.lastU) continue;
       if (update.seq != null && state.lastSeq != null && update.seq <= state.lastSeq) continue;
 
       this.applyUpdate(state, update);
+      if (update.u != null) state.lastU = update.u;
+      if (update.seq != null) state.lastSeq = update.seq;
     }
 
     state.buffer.length = 0;
@@ -211,7 +210,7 @@ export class BybitBookClient implements BookWsClient {
     console.debug(`Resyncing order book for Bybit ${symbol}...`);
 
     try {
-      const url = `${REST_API_URL}/market/orderbook?category=spot&symbol=${encodeURIComponent(symbol)}&limit=${limit ?? this.opts.depthLimit ?? DEPTH_LIMIT}`;
+      const url = `${this.opts.restUrl ?? REST_API_URL}/market/orderbook?category=${this.opts.category ?? 'spot'}&symbol=${encodeURIComponent(symbol)}&limit=${limit ?? this.opts.depthLimit ?? DEPTH_LIMIT}`;
       const resp = await withHttpRetry(() => fetch(url), { maxAttempts: 5 });
 
       if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
@@ -236,6 +235,7 @@ export class BybitBookClient implements BookWsClient {
       // Reset sequence tracking after snapshot
       if (res.seq != null) state.lastSeq = res.seq;
       else state.lastSeq = undefined;
+      state.lastU = res.u ?? undefined;
 
       this.processBuffer(state, symbol);
 
@@ -283,6 +283,7 @@ export class BybitBookClient implements BookWsClient {
         this.upsertOrderBookEntries(state.asks, msg.data.a);
 
         if (msg.data.seq != null) state.lastSeq = msg.data.seq;
+        if (msg.data.u != null) state.lastU = msg.data.u;
 
         this.processBuffer(state, symbol);
 
@@ -299,10 +300,25 @@ export class BybitBookClient implements BookWsClient {
           return;
         }
 
+        const u = msg.data.u;
+        if (u != null && state.lastU != null) {
+          if (u <= state.lastU) return;
+          if (u !== state.lastU + 1) {
+            console.debug(
+              `Bybit ${symbol} sequence gap (u=${u}, lastU=${state.lastU}) — resyncing`
+            );
+            state.syncing = true;
+            this.pushBuffered(state, msg.data, symbol);
+            this.resync(symbol).catch(() => {});
+            return;
+          }
+        }
+
         this.upsertOrderBookEntries(state.bids, msg.data.b);
         this.upsertOrderBookEntries(state.asks, msg.data.a);
 
         if (msg.data.seq != null) state.lastSeq = msg.data.seq;
+        if (u != null) state.lastU = u;
 
         state.dirty = true;
         return;
@@ -498,7 +514,7 @@ export class BybitBookClient implements BookWsClient {
    * @param pairKey The trading pair or key to retrieve the order book for.
    * @returns The order book for the specified trading pair, or undefined if not available.
    */
-  getOrderBook(pairKey: string): OrderBook | undefined {
+  getRawOrderBook(pairKey: string): OrderBook | undefined {
     const key = pairKey.toUpperCase();
     const state = this.states.get(key);
     if (!state || state.syncing) return;
@@ -513,6 +529,18 @@ export class BybitBookClient implements BookWsClient {
       .map(([p, q]) => ({ price: Number(p), quantity: q }))
       .sort((a, b) => a.price - b.price);
 
-    return bucketizeOrderBook({ bids, asks }, this.priceBucket!);
+    return { bids, asks };
+  }
+
+  /**
+   * Gets the bucketized order book for a trading pair.
+   *
+   * @param pairKey The trading pair or key to retrieve the order book for.
+   * @returns The bucketized order book for the specified trading pair, or undefined if not available.
+   */
+  getOrderBook(pairKey: string): OrderBook | undefined {
+    const raw = this.getRawOrderBook(pairKey);
+    if (!raw) return;
+    return bucketizeOrderBook(raw, this.priceBucket!);
   }
 }

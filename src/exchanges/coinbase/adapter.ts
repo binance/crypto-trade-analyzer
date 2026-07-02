@@ -121,6 +121,27 @@ export class CoinbaseAdapter implements ExchangeAdapter {
   }
 
   /**
+   * Retrieves the raw order book for a given trading pair from the WebSocket client.
+   *
+   * @param pairKey - The trading pair key (e.g., "BTC-USDT").
+   * @returns The raw order book for the specified trading pair, or undefined if not available.
+   */
+  getRawOrderBook(pairKey: string): OrderBook | undefined {
+    return this.bookWs.getRawOrderBook(pairKey);
+  }
+
+  /**
+   * Sets the price bucket size for the order book. This will affect how the order book data is aggregated and presented.
+   *
+   * @param tick - The price bucket size (tick size) to set. If `undefined`, the order book will not be bucketized.
+   * @returns void
+   */
+  setPriceBucket(tick: number | undefined): void {
+    this.priceBucket = tick;
+    this.bookWs.priceBucket = tick;
+  }
+
+  /**
    * Retrieves the tick size (minimum price increment) for a given trading pair from Coinbase.
    *
    * The method first checks a local cache for the tick size. If not found or invalid,

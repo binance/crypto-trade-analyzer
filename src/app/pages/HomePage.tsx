@@ -2,29 +2,36 @@ import { lazy, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } 
 import { Link } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
-import { PairDirectory } from '../../core/services/pair-directory';
 import { useExchangeCatalog } from '../hooks/useExchangeCatalog';
 import { useExchangeSettings } from '../hooks/useExchangeSettings';
 import { usePairOptions } from '../hooks/usePairOptions';
 import { useSupportedExchanges } from '../hooks/useSupportedExchanges';
 import { useExchangeEngine } from '../hooks/useExchangeEngine';
 import { useTermsConsent } from '../hooks/useTermsConsent';
-import { MAX_CARD_SLOTS } from '../../utils/constants';
-import { countDecimals, getTradingPairAndQuantity, parsePair } from '../../utils/utils';
+import { MAX_CARD_SLOTS, INITIAL_TRADING_PAIRS_LIST } from '../../utils/constants';
+import {
+  countDecimals,
+  getTradingPairAndQuantity,
+  parsePair,
+  isStablecoin,
+} from '../../utils/utils';
+import { buildShareUrl, parseShareParams } from '../../utils/share-url';
 import { syncGAConsent } from '../../utils/analytics';
 import type { ExchangeId } from '../../exchanges';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
-import type { OrderSide } from '../../core/interfaces/order-book';
+import type { MarketType, OrderSide } from '../../core/interfaces/order-book';
 
 import { Pill } from '../components/Pill';
 import { PairInput } from '../components/PairInput';
 import { SegmentToggle } from '../components/SegmentToggle';
 import { SizeInput } from '../components/SizeInput';
+import { HoldInput } from '../components/HoldInput';
 import { DropdownButton } from '../components/DropdownButton';
 import { ExchangeSelector } from '../components/ExchangeSelector';
 import { PauseButton } from '../components/PauseButton';
 import { ExchangeCard } from '../components/ExchangeCard';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { ShareButton } from '../components/ShareButton';
 import { CookieConsentBox } from '../components/CookieConsentBox';
 
 import icon from '/icon.svg?url';
@@ -121,20 +128,41 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
   }, []);
 
   const { initialTradingPair, initialSize, initialSizeAsset } = getTradingPairAndQuantity();
-  const [side, setSide] = useState<OrderSide>(initialSide);
-  const [tradingPair, setTradingPair] = useState(initialTradingPair);
-  const [sizeStr, setSizeStr] = useState(initialSize);
+  const shared = useRef(parseShareParams(window.location.search)).current;
+
+  const [marketType, setMarketType] = useState<MarketType>(shared.market ?? 'spot');
+  const [holdingHoursStr, setHoldingHoursStr] = useState(shared.hold ?? '8');
+  const [side, setSide] = useState<OrderSide>(shared.side ?? initialSide);
+  const [tradingPair, setTradingPair] = useState(() => {
+    if (shared.pair) {
+      if (shared.market === 'futures') {
+        const { quote } = parsePair(shared.pair);
+        if (!isStablecoin(quote)) return INITIAL_TRADING_PAIRS_LIST[0].tradingPair;
+      }
+
+      return shared.pair;
+    }
+
+    return initialTradingPair;
+  });
+  const [sizeStr, setSizeStr] = useState(shared.size ?? initialSize);
   const [slots, setSlots] = useState<(ExchangeId | null)[]>([null, null, null, null]);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const [sizeAsset, setSizeAsset] = useState<'base' | 'quote'>(
-    initialSizeAsset as 'base' | 'quote'
+    (shared.sizeAsset ?? initialSizeAsset) as 'base' | 'quote'
   );
   const [stuck, setStuck] = useState(false);
   const [pausedBest, setPausedBest] = useState<ExchangeId | null>(null);
 
   const size = Number(sizeStr) || 0;
+  const isPerp = marketType === 'futures';
+  const holdingPeriodHours = isPerp
+    ? holdingHoursStr.trim() === ''
+      ? 8
+      : Math.max(0, Number(holdingHoursStr) || 0)
+    : undefined;
   const { base: baseAsset, quote: quoteAsset } = parsePair(tradingPair);
 
   const selectorBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -142,11 +170,10 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
   const stickySentinelRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => slots.filter(Boolean) as ExchangeId[], [slots]);
-  const pairDir = useMemo(() => new PairDirectory(), []);
 
-  const { cardOrder, names, ids } = useExchangeCatalog();
-  const { feeMeta, settings, defaultTierByEx, setSettings } = useExchangeSettings();
-  const { pairOptions, pairMeta, loadingPairs } = usePairOptions();
+  const { cardOrder, names, ids } = useExchangeCatalog(marketType);
+  const { feeMeta, settings, defaultTierByEx, setSettings } = useExchangeSettings(marketType);
+  const { pairOptions, pairMeta, loadingPairs, pairDir } = usePairOptions(marketType);
   const supportedSetRaw = useSupportedExchanges({ tradingPair, pairDir, allowed: ids });
 
   const supportedSet = useMemo(() => {
@@ -157,34 +184,74 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
     return supportedSetRaw;
   }, [loadingPairs, supportedSetRaw, ids, cardOrder]);
 
-  const { books, costBreakdownMap, errors, rankedExchanges, calcTimestamps, priceBucket } =
-    useExchangeEngine({
-      tradingPair,
-      size,
-      sizeAsset,
-      side,
-      selected,
-      supportedSet,
-      defaultTierByEx,
-      settings,
-      paused,
-      onSelectExchanges: (next) => {
-        setSlots(() => {
-          const sorted = [...next].sort((a, b) =>
-            (names[a] ?? a).localeCompare(names[b] ?? b, undefined, { sensitivity: 'base' })
-          );
-          return [
-            ...sorted,
-            ...Array(Math.max(0, MAX_CARD_SLOTS - sorted.length)).fill(null),
-          ] as (ExchangeId | null)[];
-        });
-      },
-    });
+  const {
+    books,
+    costBreakdownMap,
+    errors,
+    rankedExchanges,
+    calcTimestamps,
+    priceBucket,
+    displayTickByEx,
+  } = useExchangeEngine({
+    tradingPair,
+    size,
+    sizeAsset,
+    side,
+    selected,
+    supportedSet,
+    defaultTierByEx,
+    settings,
+    marketType,
+    holdingPeriodHours,
+    paused,
+    onSelectExchanges: (next) => {
+      setSlots(() => {
+        const sorted = [...next].sort((a, b) =>
+          (names[a] ?? a).localeCompare(names[b] ?? b, undefined, { sensitivity: 'base' })
+        );
+        return [
+          ...sorted,
+          ...Array(Math.max(0, MAX_CARD_SLOTS - sorted.length)).fill(null),
+        ] as (ExchangeId | null)[];
+      });
+    },
+  });
 
   const selectorOptions = useMemo(
     () => cardOrder.map((id) => ({ id: id as ExchangeId, name: id as string })),
     [cardOrder]
   );
+
+  const handleMarketChange = (next: MarketType) => {
+    if (next === marketType) return;
+    setMarketType(next);
+    setSlots([null, null, null, null]);
+    setPaused(false);
+    setPausedBest(null);
+    didInitRef.current = false;
+    if (next === 'futures') {
+      const { quote } = parsePair(tradingPair);
+      if (!isStablecoin(quote)) setTradingPair(INITIAL_TRADING_PAIRS_LIST[0].tradingPair);
+    }
+  };
+
+  // Keep the URL in sync with the current view so reloading restores state
+  useEffect(() => {
+    if (!tradingPair) return;
+    window.history.replaceState(
+      {},
+      '',
+      buildShareUrl({
+        market: marketType,
+        pair: tradingPair,
+        side,
+        size: sizeStr,
+        sizeAsset,
+        hold: holdingHoursStr,
+        exchanges: selected,
+      })
+    );
+  }, [marketType, tradingPair, side, sizeStr, sizeAsset, holdingHoursStr, selected]);
 
   // Auto-select supported exchanges when a trading pair is chosen
   useEffect(() => {
@@ -195,7 +262,17 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
       return;
     }
 
-    const initial = cardOrder.slice(0, MAX_CARD_SLOTS) as (ExchangeId | null)[];
+    let initial: ExchangeId[];
+    if (shared.exchanges?.length) {
+      const sharedSet = new Set(shared.exchanges);
+      const filtered = cardOrder
+        .filter((id) => sharedSet.has(id))
+        .slice(0, MAX_CARD_SLOTS) as ExchangeId[];
+
+      initial = filtered.length ? filtered : (cardOrder.slice(0, MAX_CARD_SLOTS) as ExchangeId[]);
+    } else {
+      initial = cardOrder.slice(0, MAX_CARD_SLOTS) as ExchangeId[];
+    }
     setSlots([...initial, ...Array(Math.max(0, MAX_CARD_SLOTS - initial.length)).fill(null)]);
     didInitRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,7 +323,7 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
 
             <div className="min-w-0">
               <h1
-                className="text-2xl sm:text-4xl font-bold leading-tight sm:leading-tight truncate"
+                className="text-xl sm:text-4xl font-bold leading-tight sm:leading-tight truncate"
                 title="Crypto Trade Analyzer"
               >
                 Crypto Trade Analyzer
@@ -260,6 +337,17 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
             </div>
 
             <div className="ml-auto sm:ml-0 flex items-center gap-2 flex-shrink-0">
+              <ShareButton
+                state={{
+                  market: marketType,
+                  pair: tradingPair,
+                  side,
+                  size: sizeStr,
+                  sizeAsset,
+                  hold: holdingHoursStr,
+                  exchanges: selected,
+                }}
+              />
               <ThemeToggle />
             </div>
 
@@ -286,7 +374,15 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
             ].join(' ')}
           >
             <div className="flex flex-wrap items-center gap-2">
-              <Pill label="Spot" />
+              <SegmentToggle
+                size="sm"
+                options={[
+                  { label: 'Spot', value: 'spot' },
+                  { label: 'Futures Perp', value: 'futures' },
+                ]}
+                value={marketType}
+                onChange={(v) => handleMarketChange(v as MarketType)}
+              />
               <Pill label="Market Order" />
 
               <SegmentToggle
@@ -298,6 +394,8 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
                 value={side}
                 onChange={(v) => setSide(v as OrderSide)}
               />
+
+              {isPerp && <HoldInput value={holdingHoursStr} onChange={setHoldingHoursStr} />}
             </div>
 
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center">
@@ -344,11 +442,21 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
         </header>
 
         {/* Top controls */}
-        <div className="mb-6">
+        <div className="sm:mb-6">
           <div className="hidden sm:flex sm:items-center sm:justify-between">
             <div tabIndex={-1} className="controls-rail flex-1 min-w-0">
-              <Pill label="Spot" />
-              <Pill label="Market Order" />
+              <div className="controls-group">
+                <SegmentToggle
+                  size="sm"
+                  options={[
+                    { label: 'Spot', value: 'spot' },
+                    { label: 'Futures Perp', value: 'futures' },
+                  ]}
+                  value={marketType}
+                  onChange={(v) => handleMarketChange(v as MarketType)}
+                />
+                <Pill label="Market Order" />
+              </div>
 
               <PairInput
                 value={tradingPair}
@@ -359,25 +467,33 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
                 placeholder={loadingPairs ? 'Loading…' : 'Trading pair'}
               />
 
-              <SegmentToggle
-                size="sm"
-                options={[
-                  { label: 'Buy', value: 'buy' },
-                  { label: 'Sell', value: 'sell' },
-                ]}
-                value={side}
-                onChange={(v) => setSide(v as OrderSide)}
-              />
-
-              <SizeInput
-                sizeStr={sizeStr}
-                baseAsset={baseAsset}
-                quoteAsset={quoteAsset}
-                sizeAsset={sizeAsset}
-                setSizeStr={setSizeStr}
-                onSizeAssetChange={setSizeAsset}
-                className="w-32 min-w-[9rem] sm:w-44 sm:min-w-[12rem] mr-6"
-              />
+              <div className="controls-group">
+                <SegmentToggle
+                  size="sm"
+                  options={[
+                    { label: 'Buy', value: 'buy' },
+                    { label: 'Sell', value: 'sell' },
+                  ]}
+                  value={side}
+                  onChange={(v) => setSide(v as OrderSide)}
+                />
+                {isPerp && (
+                  <HoldInput
+                    value={holdingHoursStr}
+                    onChange={setHoldingHoursStr}
+                    className="h-9"
+                  />
+                )}
+                <SizeInput
+                  sizeStr={sizeStr}
+                  baseAsset={baseAsset}
+                  quoteAsset={quoteAsset}
+                  sizeAsset={sizeAsset}
+                  setSizeStr={setSizeStr}
+                  onSizeAssetChange={setSizeAsset}
+                  className="h-9"
+                />
+              </div>
 
               <DropdownButton
                 ref={selectorBtnRef}
@@ -480,8 +596,10 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
               return (
                 <ExchangeCard
                   key={id ?? `slot-${idx}`}
+                  className={!isSelected ? 'hidden sm:block' : undefined}
                   exchangeId={id}
                   exchangeName={exchangeName}
+                  marketType={marketType}
                   supportsTokenDiscount={
                     isSelected && id ? !!feeMeta[id]?.supportsTokenDiscount : false
                   }
@@ -495,6 +613,10 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
                   books={books}
                   costBreakdownMap={costBreakdownMap as Record<ExchangeId, CostBreakdown>}
                   precision={priceBucket ? countDecimals(priceBucket) : undefined}
+                  bookPrecision={(() => {
+                    const tick = (id && displayTickByEx[id]) || priceBucket;
+                    return tick ? countDecimals(tick) : undefined;
+                  })()}
                   error={err}
                   tradingPair={tradingPair}
                   size={size}

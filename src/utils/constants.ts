@@ -1,7 +1,18 @@
+import type { MarketType } from '../core/interfaces/order-book';
+
 /**
  * The key for storing user account settings in localStorage.
+ * Per-market keys are derived from this base (see `accountSettingsStorageKey`)
+ * so spot and futures tiers/discounts don't bleed across modes.
  */
 export const ACCOUNT_SETTINGS_STORAGE_KEY = 'cc:exchange-settings:v1';
+
+/**
+ * Returns the market-scoped account-settings storage key.
+ * Spot keeps the original key for backward compatibility with existing users.
+ */
+export const accountSettingsStorageKey = (market: MarketType): string =>
+  market === 'spot' ? ACCOUNT_SETTINGS_STORAGE_KEY : `${ACCOUNT_SETTINGS_STORAGE_KEY}:${market}`;
 
 /**
  * The key for storing the user's analytics consent preference in localStorage.

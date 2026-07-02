@@ -482,7 +482,7 @@ export class CoinbaseBookClient implements BookWsClient {
    * @param pairKey The product ID to retrieve the order book for.
    * @returns The current order book or undefined if not available.
    */
-  getOrderBook(pairKey: string): OrderBook | undefined {
+  getRawOrderBook(pairKey: string): OrderBook | undefined {
     const state = this.states.get(pairKey);
     if (!state || state.syncing) return;
 
@@ -496,6 +496,18 @@ export class CoinbaseBookClient implements BookWsClient {
       .map(([p, q]) => ({ price: Number(p), quantity: q }))
       .sort((a, b) => a.price - b.price);
 
-    return bucketizeOrderBook({ bids, asks }, this.priceBucket!);
+    return { bids, asks };
+  }
+
+  /**
+   * Gets the bucketized order book for a trading pair.
+   *
+   * @param pairKey The trading pair or key to retrieve the order book for.
+   * @returns The bucketized order book for the specified trading pair, or undefined if not available.
+   */
+  getOrderBook(pairKey: string): OrderBook | undefined {
+    const raw = this.getRawOrderBook(pairKey);
+    if (!raw) return;
+    return bucketizeOrderBook(raw, this.priceBucket!);
   }
 }

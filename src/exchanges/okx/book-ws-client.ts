@@ -17,6 +17,8 @@ type OkxBookMsgData = {
   asks: string[][];
   bids: string[][];
   ts: number;
+  seqId?: number;
+  prevSeqId?: number;
 };
 
 /**
@@ -42,6 +44,7 @@ type BookState = {
   lastEmit: number;
   buffer: OkxBookMsgData[];
   lastTs?: number;
+  lastSeqId?: number;
   interval?: ReturnType<typeof setInterval>;
 };
 
@@ -96,6 +99,8 @@ export class OkxBookClient implements BookWsClient {
       bids: datum.bids,
       asks: datum.asks,
       ts: Number(datum.ts) || Date.now(),
+      seqId: datum.seqId,
+      prevSeqId: datum.prevSeqId,
     });
   }
 
@@ -141,10 +146,14 @@ export class OkxBookClient implements BookWsClient {
 
     console.debug(`Processing OKX ${state.buffer.length} buffered updates for ${instId}`);
 
-    state.buffer.sort((a, b) => a.ts - b.ts);
+    state.buffer.sort((a, b) => (a.seqId ?? a.ts) - (b.seqId ?? b.ts));
 
     for (const update of state.buffer) {
+      if (update.seqId != null && state.lastSeqId != null && update.seqId <= state.lastSeqId)
+        continue;
+
       this.applyUpdate(state, update);
+      if (update.seqId != null) state.lastSeqId = update.seqId;
       state.lastTs = Math.max(state.lastTs || 0, update.ts);
     }
 
@@ -190,6 +199,7 @@ export class OkxBookClient implements BookWsClient {
       this.upsertOrderBookEntries(state.bids, first.bids);
       this.upsertOrderBookEntries(state.asks, first.asks);
       state.lastTs = Number(first.ts);
+      state.lastSeqId = Number(first.seqId);
 
       // Process any buffered updates that arrived during resync
       this.processBuffer(state, instId);
@@ -246,6 +256,7 @@ export class OkxBookClient implements BookWsClient {
         this.upsertOrderBookEntries(state.asks, datum.asks);
 
         state.lastTs = messageTs;
+        state.lastSeqId = Number(datum.seqId);
 
         // Process any buffered updates after snapshot
         this.processBuffer(state, instId);
@@ -256,15 +267,33 @@ export class OkxBookClient implements BookWsClient {
       }
 
       if (msg.action === 'update') {
-        if (messageTs <= (state.lastTs || 0)) return;
-
         // If syncing, buffer the update
         if (state.syncing) {
           this.pushBuffered(state, datum, instId);
           return;
         }
 
+        const seqId = Number(datum.seqId);
+        const prevSeqId = Number(datum.prevSeqId);
+        const haveSeq = state.lastSeqId != null && Number.isFinite(prevSeqId);
+
+        if (haveSeq) {
+          if (Number.isFinite(seqId) && seqId <= state.lastSeqId!) return;
+          if (prevSeqId !== state.lastSeqId) {
+            console.debug(
+              `OKX ${instId} sequence gap (prevSeqId=${prevSeqId}, lastSeqId=${state.lastSeqId}) — resyncing`
+            );
+            state.syncing = true;
+            this.pushBuffered(state, datum, instId);
+            this.resync(instId).catch(() => {});
+            return;
+          }
+        } else {
+          if (messageTs <= (state.lastTs || 0)) return;
+        }
+
         this.applyUpdate(state, datum);
+        if (Number.isFinite(seqId)) state.lastSeqId = seqId;
         state.lastTs = messageTs;
         state.dirty = true;
         return;
@@ -438,7 +467,7 @@ export class OkxBookClient implements BookWsClient {
    * @param pairKey The trading pair or key to retrieve the order book for.
    * @returns The order book for the specified trading pair, or undefined if not available.
    */
-  getOrderBook(pairKey: string): OrderBook | undefined {
+  getRawOrderBook(pairKey: string): OrderBook | undefined {
     const key = pairKey.toUpperCase();
     const state = this.states.get(key);
     if (!state || state.syncing) return;
@@ -453,6 +482,18 @@ export class OkxBookClient implements BookWsClient {
       .map(([p, q]) => ({ price: Number(p), quantity: q }))
       .sort((a, b) => a.price - b.price);
 
-    return bucketizeOrderBook({ bids, asks }, this.priceBucket!);
+    return { bids, asks };
+  }
+
+  /**
+   * Gets the bucketized order book for a trading pair.
+   *
+   * @param pairKey The trading pair or key to retrieve the order book for.
+   * @returns The bucketized order book for the specified trading pair, or undefined if not available.
+   */
+  getOrderBook(pairKey: string): OrderBook | undefined {
+    const raw = this.getRawOrderBook(pairKey);
+    if (!raw) return;
+    return bucketizeOrderBook(raw, this.priceBucket!);
   }
 }

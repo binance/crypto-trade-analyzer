@@ -1,10 +1,17 @@
-import fees from './fees.v2025-08-26.json';
+import spotFees from './fees.v2025-08-26.json';
+import futuresFees from './fees.futures.v2026-06-09.json';
+import { attachFunding } from '../../core/services/funding-rate';
 import { bucketizeOrderBook, parsePair, withHttpRetry } from '../../utils/utils';
 import { calculateFeeRates } from '../../core/services/fee-rates';
 import { OkxBookClient } from './book-ws-client';
 import { REST_API_URL } from './utils/constants';
 import type { ExchangeAdapter } from '../../core/interfaces/exchange-adapter';
-import type { OrderBook, OrderSide, OrderSizeAsset } from '../../core/interfaces/order-book';
+import type {
+  MarketType,
+  OrderBook,
+  OrderSide,
+  OrderSizeAsset,
+} from '../../core/interfaces/order-book';
 import type { CostBreakdown, FeeData } from '../../core/interfaces/fee-config';
 import type { CostCalculator } from '../../core/services/cost-calculator';
 import type { OkxBookRestResponse } from './book-ws-client';
@@ -13,10 +20,19 @@ export class OkxAdapter implements ExchangeAdapter {
   readonly name = 'OKX';
   private bookWs: OkxBookClient;
   private tickCache = new Map<string, number>();
+  private ctValCache = new Map<string, number>();
   private currentPair?: string;
+  private fees: FeeData;
+  private instType: 'SPOT' | 'SWAP';
   priceBucket?: number;
 
-  constructor(private costCalculator: CostCalculator) {
+  constructor(
+    private costCalculator: CostCalculator,
+    private market: MarketType = 'spot'
+  ) {
+    const isFutures = market === 'futures';
+    this.fees = (isFutures ? futuresFees : spotFees) as FeeData;
+    this.instType = isFutures ? 'SWAP' : 'SPOT';
     this.bookWs = new OkxBookClient();
   }
 
@@ -68,7 +84,8 @@ export class OkxAdapter implements ExchangeAdapter {
    * @returns The trading symbol (e.g., "BTC-USDT").
    */
   getPairSymbol(base: string, quote: string) {
-    return `${base}-${quote}`.toUpperCase();
+    const instId = `${base}-${quote}`.toUpperCase();
+    return this.market === 'futures' ? `${instId}-SWAP` : instId;
   }
 
   /**
@@ -77,7 +94,7 @@ export class OkxAdapter implements ExchangeAdapter {
    * @returns The fee data object.
    */
   getFeeData(): FeeData {
-    return fees as FeeData;
+    return this.fees;
   }
 
   /**
@@ -120,7 +137,38 @@ export class OkxAdapter implements ExchangeAdapter {
    * @returns A function to unsubscribe from the updates.
    */
   onLiveBook(cb: (pairKey: string, book: OrderBook) => void): () => void {
-    return this.bookWs.onUpdate(cb);
+    if (this.instType !== 'SWAP') return this.bookWs.onUpdate(cb);
+    return this.bookWs.onUpdate((pairKey: string, book: OrderBook) => {
+      const ctVal = this.ctValCache.get(pairKey) ?? 1;
+      cb(pairKey, this.scaleBookByContractValue(book, ctVal));
+    });
+  }
+
+  /**
+   * Retrieves the raw order book for a given trading pair from the WebSocket client.
+   *
+   * @param pairKey - The trading pair key (e.g., "BTC-USDT").
+   * @returns The raw order book for the specified trading pair, or undefined if not available.
+   */
+  getRawOrderBook(pairKey: string): OrderBook | undefined {
+    const raw = this.bookWs.getRawOrderBook(pairKey);
+    if (!raw) return undefined;
+    if (this.instType === 'SWAP') {
+      const ctVal = this.ctValCache.get(pairKey) ?? 1;
+      return this.scaleBookByContractValue(raw, ctVal);
+    }
+    return raw;
+  }
+
+  /**
+   * Sets the price bucket size for the order book. This will affect how the order book data is aggregated and presented.
+   *
+   * @param tick - The price bucket size (tick size) to set. If `undefined`, the order book will not be bucketized.
+   * @returns void
+   */
+  setPriceBucket(tick: number | undefined): void {
+    this.priceBucket = tick;
+    this.bookWs.priceBucket = tick;
   }
 
   /**
@@ -140,16 +188,63 @@ export class OkxAdapter implements ExchangeAdapter {
     const cached = this.tickCache.get(instId);
     if (cached) return cached;
 
-    const url = `${REST_API_URL}/public/instruments?instType=SPOT&instId=${instId}`;
+    const url = `${REST_API_URL}/public/instruments?instType=${this.instType}&instId=${instId}`;
     const resp = await withHttpRetry(() => fetch(url), { maxAttempts: 3 });
     if (!resp.ok) return undefined;
 
     const data = await resp.json();
-    const tick = Number(data?.data?.[0]?.tickSz);
+    const row = data?.data?.[0];
+    const tick = Number(row?.tickSz);
 
     if (tick && isFinite(tick) && tick > 0) this.tickCache.set(instId, tick);
 
+    if (this.instType === 'SWAP') {
+      const ctVal = Number(row?.ctVal);
+      if (ctVal && isFinite(ctVal) && ctVal > 0) this.ctValCache.set(instId, ctVal);
+    }
+
     return tick && isFinite(tick) && tick > 0 ? tick : undefined;
+  }
+
+  /**
+   * Returns base units per contract for a SWAP instId (1 for spot). Fetches and caches
+   * ctVal from /public/instruments on a miss.
+   *
+   * @param instId - The instrument id (e.g. "BTC-USDT-SWAP").
+   */
+  private async getContractValue(instId: string): Promise<number> {
+    if (this.instType !== 'SWAP') return 1;
+
+    const cached = this.ctValCache.get(instId);
+    if (cached && cached > 0) return cached;
+
+    const url = `${REST_API_URL}/public/instruments?instType=SWAP&instId=${instId}`;
+    const resp = await withHttpRetry(() => fetch(url), { maxAttempts: 3 });
+    if (!resp.ok) return 1;
+
+    const data = await resp.json();
+    const ctVal = Number(data?.data?.[0]?.ctVal);
+    if (ctVal && isFinite(ctVal) && ctVal > 0) {
+      this.ctValCache.set(instId, ctVal);
+      return ctVal;
+    }
+    return 1;
+  }
+
+  /**
+   * Scales an order book's quantities from contracts to base units for SWAP (no-op for spot
+   * or ctVal=1). OKX returns depth sizes in contracts; the cost calculator expects base units.
+   *
+   * @param book - The order book whose quantities are in contracts.
+   * @param ctVal - Base units per contract.
+   */
+  private scaleBookByContractValue(book: OrderBook, ctVal: number): OrderBook {
+    if (ctVal === 1) return book;
+    const scale = (e: { price: number; quantity: number }) => ({
+      price: e.price,
+      quantity: e.quantity * ctVal,
+    });
+    return { bids: book.bids.map(scale), asks: book.asks.map(scale) };
   }
 
   /**
@@ -165,6 +260,7 @@ export class OkxAdapter implements ExchangeAdapter {
     orderSide = 'buy',
     userTier,
     customFees,
+    holdingPeriodHours,
   }: {
     pair: string;
     orderSize: number;
@@ -173,6 +269,7 @@ export class OkxAdapter implements ExchangeAdapter {
     userTier?: string;
     tokenDiscount?: boolean;
     customFees?: number;
+    holdingPeriodHours?: number;
   }): Promise<CostBreakdown> {
     const { base, quote } = parsePair(pair);
     const instId = this.getPairSymbol(base, quote);
@@ -185,10 +282,15 @@ export class OkxAdapter implements ExchangeAdapter {
     if (!book.asks.length || !book.bids.length)
       throw new Error(`Empty OKX order book for ${instId}`);
 
+    if (this.instType === 'SWAP') {
+      const ctVal = await this.getContractValue(instId);
+      book = this.scaleBookByContractValue(book, ctVal);
+    }
+
     const exec = 'taker';
     const feeAsset = orderSide === 'buy' ? base : quote;
 
-    const standardFeeRates = calculateFeeRates(fees as FeeData, {
+    const standardFeeRates = calculateFeeRates(this.fees, {
       pair: `${base}/${quote}`,
       exec,
       userTier,
@@ -196,7 +298,7 @@ export class OkxAdapter implements ExchangeAdapter {
       customFees,
     });
 
-    return await this.costCalculator.calculateCost(
+    const breakdown = await this.costCalculator.calculateCost(
       this.name,
       book,
       orderSize,
@@ -206,6 +308,11 @@ export class OkxAdapter implements ExchangeAdapter {
       quote,
       { feeAsset, sizeAsset: orderSizeAsset }
     );
+
+    if (this.market === 'futures')
+      await attachFunding(breakdown, 'OKX', instId, orderSide, holdingPeriodHours);
+
+    return breakdown;
   }
 
   /**

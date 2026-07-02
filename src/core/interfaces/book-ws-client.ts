@@ -8,4 +8,5 @@ export interface BookWsClient {
   unwatchPair(pair: string): void;
   onUpdate(cb: OrderBookListener): () => void;
   getOrderBook(pair: string): OrderBook | undefined;
+  getRawOrderBook(pair: string): OrderBook | undefined;
 }

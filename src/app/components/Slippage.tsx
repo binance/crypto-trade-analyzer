@@ -16,11 +16,13 @@ import type { OpenInfoKey } from '../types';
 export function Slippage({
   costBreakdown,
   precision,
+  adaptiveQuote = false,
   openInfoKey,
   setOpenInfoKey,
 }: {
   costBreakdown: CostBreakdown;
   precision?: number;
+  adaptiveQuote?: boolean;
   openInfoKey: OpenInfoKey | null;
   setOpenInfoKey: React.Dispatch<React.SetStateAction<OpenInfoKey | null>>;
 }): JSX.Element {
@@ -35,14 +37,16 @@ export function Slippage({
         </td>
         <td className="py-2 text-right font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">
           <span className="block text-right tabular font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">
-            {cryptoNumberFormat(costBreakdown.slippage.amount, {
-              ...(precision && {
-                minDecimals: precision > 2 ? precision : 2,
-                maxDecimals: precision,
-                minSig: precision,
-                maxSig: precision,
-              }),
-            })}
+            {adaptiveQuote
+              ? fiatNumberFormat(costBreakdown.slippage.amount)
+              : cryptoNumberFormat(costBreakdown.slippage.amount, {
+                  ...(precision && {
+                    minDecimals: precision > 2 ? precision : 2,
+                    maxDecimals: precision,
+                    minSig: precision,
+                    maxSig: precision,
+                  }),
+                })}
           </span>
         </td>
         <td className="py-2 text-right font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">

@@ -1,7 +1,12 @@
 import Decimal from 'decimal.js';
-import { INITIAL_TRADING_PAIRS_LIST } from './constants';
+import { INITIAL_TRADING_PAIRS_LIST, STABLECOINS } from './constants';
 import type { OrderBookListener } from '../core/interfaces/book-ws-client';
-import type { OrderBook, OrderBookEntry, OrderSide } from '../core/interfaces/order-book';
+import type {
+  MarketType,
+  OrderBook,
+  OrderBookEntry,
+  OrderSide,
+} from '../core/interfaces/order-book';
 import type { CostBreakdown } from '../core/interfaces/fee-config';
 import type { ExchangeId } from '../exchanges';
 
@@ -354,6 +359,45 @@ export function normalizePairText(s: string) {
 }
 
 /**
+ * Returns whether the given asset symbol is a USD stablecoin (USDT, USDC, etc.).
+ * Case-insensitive and null-safe. Used to gate futures support (perps are stablecoin-margined)
+ * and USD-style display formatting (stablecoin quotes ≈ $1/unit).
+ *
+ * @param asset - The asset symbol to check (e.g. "USDT"), or null/undefined.
+ * @returns `true` if the asset is a known stablecoin.
+ */
+export function isStablecoin(asset: string | null | undefined): boolean {
+  return !!asset && STABLECOINS.has(asset.toUpperCase());
+}
+
+/**
+ * Infers the real price granularity of an order book from the spacing between its distinct price
+ * levels. This derives the smallest positive gap between consecutive distinct prices across
+ * both sides — the true increment the book moves in.
+ *
+ * @param book - The raw (un-bucketed) order book.
+ * @returns The inferred tick (smallest gap between distinct prices), or undefined if it can't be
+ *          determined (fewer than two distinct prices).
+ */
+export function inferBookTick(book: OrderBook): number | undefined {
+  const prices = [...book.bids, ...book.asks]
+    .map((l) => l.price)
+    .filter((p) => Number.isFinite(p) && p > 0);
+  const distinct = Array.from(new Set(prices)).sort((a, b) => a - b);
+  if (distinct.length < 2) return undefined;
+
+  let minGap = Infinity;
+  for (let i = 1; i < distinct.length; i++) {
+    const gap = distinct[i] - distinct[i - 1];
+    if (gap > 0 && gap < minGap) minGap = gap;
+  }
+  if (!Number.isFinite(minGap)) return undefined;
+
+  // Subtracting floats introduces noise (0.19264 - 0.19263 = 0.00000999999996, not 0.00001).
+  return Number(minGap.toPrecision(3));
+}
+
+/**
  * Buckets the order book prices into discrete intervals defined by the given tick size.
  *
  * For each side ('bid' or 'ask'), prices are grouped into buckets where each bucket represents
@@ -425,11 +469,13 @@ export function calculateSavings(
   const feeAssetPeer = peerBreakdown.tradingFee?.asset?.toUpperCase?.();
   const thirdFeeAssetPeer = feeAssetPeer && feeAssetPeer !== base && feeAssetPeer !== quote;
   const sizeAsset = costBreakdown.sizeAsset;
+  const fundingCurrent = costBreakdown.funding?.usd ?? 0;
+  const fundingPeer = peerBreakdown.funding?.usd ?? 0;
 
   if (isBuy) {
     if (sizeAsset === 'base') {
-      currentCalc = costBreakdown.totalTradeUsd;
-      peerCalc = peerBreakdown.totalTradeUsd;
+      currentCalc = costBreakdown.totalTradeUsd + fundingCurrent;
+      peerCalc = peerBreakdown.totalTradeUsd + fundingPeer;
     } else {
       const usdPerBase = (costBreakdown.usdPerBase + peerBreakdown.usdPerBase) / 2;
       currentCalc =
@@ -438,21 +484,29 @@ export function calculateSavings(
           (costBreakdown.tradingFee.asset !== base
             ? (costBreakdown.tradingFee.amountInBase ?? 0)
             : 0)
-        ) * usdPerBase;
+        ) *
+          usdPerBase +
+        fundingCurrent;
       peerCalc =
         -(
           peerBreakdown.netBaseReceived -
           (peerBreakdown.tradingFee.asset !== base
             ? (peerBreakdown.tradingFee.amountInBase ?? 0)
             : 0)
-        ) * usdPerBase;
+        ) *
+          usdPerBase +
+        fundingPeer;
     }
   } else {
     if (sizeAsset === 'base') {
       currentCalc =
-        costBreakdown.totalReceivedUsd - (thirdFeeAssetCurrent ? costBreakdown.tradingFee.usd : 0);
+        costBreakdown.totalReceivedUsd -
+        (thirdFeeAssetCurrent ? costBreakdown.tradingFee.usd : 0) -
+        fundingCurrent;
       peerCalc =
-        peerBreakdown.totalReceivedUsd - (thirdFeeAssetPeer ? peerBreakdown.tradingFee.usd : 0);
+        peerBreakdown.totalReceivedUsd -
+        (thirdFeeAssetPeer ? peerBreakdown.tradingFee.usd : 0) -
+        fundingPeer;
     } else {
       const usdPerBase = (costBreakdown.usdPerBase + peerBreakdown.usdPerBase) / 2;
       currentCalc =
@@ -461,14 +515,18 @@ export function calculateSavings(
           (costBreakdown.tradingFee.asset !== base
             ? (costBreakdown.tradingFee.amountInBase ?? 0)
             : 0)
-        ) * usdPerBase;
+        ) *
+          usdPerBase -
+        fundingCurrent;
       peerCalc =
         -(
           peerBreakdown.sizeBase +
           (peerBreakdown.tradingFee.asset !== base
             ? (peerBreakdown.tradingFee.amountInBase ?? 0)
             : 0)
-        ) * usdPerBase;
+        ) *
+          usdPerBase -
+        fundingPeer;
     }
   }
 
@@ -588,19 +646,25 @@ export function calculateRankedExchanges(
 
     if (!(usdPerQuote > 0) || !(usdPerBaseExec > 0)) return Number.POSITIVE_INFINITY;
 
+    const fundingUsd = bd.funding?.usd ?? 0;
+    const fundingBase = usdPerBaseExec > 0 ? fundingUsd / usdPerBaseExec : 0;
+
     if (side === 'buy') {
-      if (sizeAsset === 'base') return bd.totalTradeUsd;
+      if (sizeAsset === 'base') return bd.totalTradeUsd + fundingUsd;
       else
-        return -(
-          bd.netBaseReceived -
-          (bd.tradingFee.asset !== base ? (bd.tradingFee.amountInBase ?? 0) : 0)
+        return (
+          -(
+            bd.netBaseReceived -
+            (bd.tradingFee.asset !== base ? (bd.tradingFee.amountInBase ?? 0) : 0)
+          ) + fundingBase
         );
     } else {
       if (sizeAsset === 'base')
-        return bd.totalReceivedUsd - (thirdFeeAsset ? bd.tradingFee.usd : 0);
+        return bd.totalReceivedUsd - (thirdFeeAsset ? bd.tradingFee.usd : 0) - fundingUsd;
       else
-        return -(
-          bd.sizeBase + (bd.tradingFee.asset !== base ? (bd.tradingFee.amountInBase ?? 0) : 0)
+        return (
+          -(bd.sizeBase + (bd.tradingFee.asset !== base ? (bd.tradingFee.amountInBase ?? 0) : 0)) -
+          fundingBase
         );
     }
   };
@@ -689,8 +753,10 @@ export function calculateRankedExchanges(
       const aBase = A.bd.totalBase ?? 0;
       const bBase = B.bd.totalBase ?? 0;
       if (!checkIfAlmostEqual(aBase, bBase)) return aBase - bBase;
-      const aRecv = A.bd.totalReceivedUsd ?? 0;
-      const bRecv = B.bd.totalReceivedUsd ?? 0;
+
+      // Mirror effectivePrice: subtract funding so the tie-breaker is consistent with the primary sort.
+      const aRecv = (A.bd.totalReceivedUsd ?? 0) - (A.bd.funding?.usd ?? 0);
+      const bRecv = (B.bd.totalReceivedUsd ?? 0) - (B.bd.funding?.usd ?? 0);
       if (!checkIfAlmostEqual(aRecv, bRecv)) return bRecv - aRecv;
     }
 
@@ -710,20 +776,43 @@ export function calculateRankedExchanges(
  * @returns The URL string to the trading page for the specified pair on the given exchange,
  *          or `null` if base or quote is missing, or `undefined` if the exchange is not supported.
  */
-export function getExchangeTradeHref(base: string, quote: string, exchangeName: string) {
+export function getExchangeTradeHref(
+  base: string,
+  quote: string,
+  exchangeName: string,
+  marketType: MarketType = 'spot'
+) {
   if (!base || !quote) return null;
   base = base.toUpperCase();
   quote = quote.toUpperCase();
 
   switch (exchangeName.toLowerCase()) {
     case 'binance':
-      return `https://www.binance.com/en/trade/${encodeURIComponent(base)}_${encodeURIComponent(quote)}?ref=AWGBMTXC&type=spot`;
+      if (marketType === 'spot')
+        return `https://www.binance.com/en/trade/${encodeURIComponent(base)}_${encodeURIComponent(quote)}?ref=AWGBMTXC&type=spot`;
+      else if (marketType === 'futures')
+        return `https://www.binance.com/en/futures/${encodeURIComponent(base)}${encodeURIComponent(quote)}?ref=AWGBMTXC`;
+      return;
     case 'bybit':
-      return `https://www.bybit.com/en/trade/spot/${encodeURIComponent(base)}/${encodeURIComponent(quote)}`;
+      if (marketType === 'spot')
+        return `https://www.bybit.com/en/trade/spot/${encodeURIComponent(base)}/${encodeURIComponent(quote)}`;
+      else if (marketType === 'futures') {
+        if (quote === 'USDT')
+          return `https://www.bybit.com/en/trade/usdt/${encodeURIComponent(base)}${encodeURIComponent(quote)}`;
+        else if (quote === 'USDC')
+          return `https://www.bybit.com/en/trade/futures/usdc/${encodeURIComponent(base)}-PERP`;
+      }
+      return;
     case 'coinbase':
-      return `https://www.coinbase.com/advanced-trade/spot/${encodeURIComponent(base)}-${encodeURIComponent(quote)}`;
+      if (marketType === 'spot')
+        return `https://www.coinbase.com/advanced-trade/spot/${encodeURIComponent(base)}-${encodeURIComponent(quote)}`;
+      return;
     case 'okx':
-      return `https://www.okx.com/trade-spot/${encodeURIComponent(base)}-${encodeURIComponent(quote)}`;
+      if (marketType === 'spot')
+        return `https://www.okx.com/trade-spot/${encodeURIComponent(base)}-${encodeURIComponent(quote)}`;
+      else if (marketType === 'futures')
+        return `https://www.okx.com/trade-swap/${encodeURIComponent(base)}-${encodeURIComponent(quote)}-swap`;
+      return;
     default:
       return undefined;
   }

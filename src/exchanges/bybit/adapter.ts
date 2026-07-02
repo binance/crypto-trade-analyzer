@@ -1,10 +1,17 @@
-import fees from './fees.v2025-08-26.json';
+import spotFees from './fees.v2025-08-26.json';
+import futuresFees from './fees.futures.v2026-06-09.json';
+import { attachFunding } from '../../core/services/funding-rate';
 import { bucketizeOrderBook, parsePair, withHttpRetry } from '../../utils/utils';
 import { calculateFeeRates } from '../../core/services/fee-rates';
 import { BybitBookClient } from './book-ws-client';
-import { REST_API_URL } from './utils/constants';
+import { REST_API_URL, FUTURES_SOCKET_URL } from './utils/constants';
 import type { ExchangeAdapter } from '../../core/interfaces/exchange-adapter';
-import type { OrderBook, OrderSide, OrderSizeAsset } from '../../core/interfaces/order-book';
+import type {
+  MarketType,
+  OrderBook,
+  OrderSide,
+  OrderSizeAsset,
+} from '../../core/interfaces/order-book';
 import type { CostBreakdown, FeeData } from '../../core/interfaces/fee-config';
 import type { CostCalculator } from '../../core/services/cost-calculator';
 import type { BybitBookRestResponse } from './book-ws-client';
@@ -14,10 +21,21 @@ export class BybitAdapter implements ExchangeAdapter {
   private bookWs: BybitBookClient;
   private tickCache = new Map<string, number>();
   private currentPair?: string;
+  private fees: FeeData;
+  private category: 'spot' | 'linear';
+  private isFutures: boolean;
   priceBucket?: number;
 
-  constructor(private costCalculator: CostCalculator) {
-    this.bookWs = new BybitBookClient();
+  constructor(
+    private costCalculator: CostCalculator,
+    market: MarketType = 'spot'
+  ) {
+    this.isFutures = market === 'futures';
+    this.fees = (this.isFutures ? futuresFees : spotFees) as FeeData;
+    this.category = this.isFutures ? 'linear' : 'spot';
+    this.bookWs = new BybitBookClient(
+      this.isFutures ? { socketUrl: FUTURES_SOCKET_URL, category: 'linear' } : {}
+    );
   }
 
   /**
@@ -31,7 +49,7 @@ export class BybitAdapter implements ExchangeAdapter {
   private async fetchOrderBook(symbol: string, limit = 1000): Promise<OrderBook> {
     console.debug(`Fetching order book for ${symbol} from Bybit REST API...`);
 
-    const url = `${REST_API_URL}/market/orderbook?category=spot&symbol=${encodeURIComponent(
+    const url = `${REST_API_URL}/market/orderbook?category=${this.category}&symbol=${encodeURIComponent(
       symbol
     )}&limit=${limit}`;
     const response = await withHttpRetry(() => fetch(url), {
@@ -67,6 +85,7 @@ export class BybitAdapter implements ExchangeAdapter {
    * @returns The trading symbol (e.g., "BTCUSDT").
    */
   getPairSymbol(base: string, quote: string) {
+    if (this.isFutures && quote.toUpperCase() === 'USDC') return `${base.toUpperCase()}PERP`;
     return (base + quote).toUpperCase();
   }
 
@@ -76,7 +95,7 @@ export class BybitAdapter implements ExchangeAdapter {
    * @returns The fee data object.
    */
   getFeeData(): FeeData {
-    return fees as FeeData;
+    return this.fees;
   }
 
   /**
@@ -123,6 +142,27 @@ export class BybitAdapter implements ExchangeAdapter {
   }
 
   /**
+   * Retrieves the raw order book for a given trading pair from the WebSocket client.
+   *
+   * @param pairKey - The trading pair key (e.g., "BTC-USDT").
+   * @returns The raw order book for the specified trading pair, or undefined if not available.
+   */
+  getRawOrderBook(pairKey: string): OrderBook | undefined {
+    return this.bookWs.getRawOrderBook(pairKey);
+  }
+
+  /**
+   * Sets the price bucket size for the order book. This will affect how the order book data is aggregated and presented.
+   *
+   * @param tick - The price bucket size (tick size) to set. If `undefined`, the order book will not be bucketized.
+   * @returns void
+   */
+  setPriceBucket(tick: number | undefined): void {
+    this.priceBucket = tick;
+    this.bookWs.priceBucket = tick;
+  }
+
+  /**
    * Retrieves the tick size for a given trading pair from Bybit's spot market API.
    *
    * The method first attempts to fetch the tick size from an internal cache.
@@ -139,7 +179,7 @@ export class BybitAdapter implements ExchangeAdapter {
     const cached = this.tickCache.get(symbol);
     if (cached) return cached;
 
-    const url = `${REST_API_URL}/market/instruments-info?category=spot&symbol=${symbol}`;
+    const url = `${REST_API_URL}/market/instruments-info?category=${this.category}&symbol=${symbol}`;
     const resp = await withHttpRetry(() => fetch(url), { maxAttempts: 3 });
     if (!resp.ok) return undefined;
 
@@ -165,6 +205,7 @@ export class BybitAdapter implements ExchangeAdapter {
     orderSide = 'buy',
     userTier,
     customFees,
+    holdingPeriodHours,
   }: {
     pair: string;
     orderSize: number;
@@ -173,6 +214,7 @@ export class BybitAdapter implements ExchangeAdapter {
     userTier?: string;
     tokenDiscount?: boolean;
     customFees?: number;
+    holdingPeriodHours?: number;
   }): Promise<CostBreakdown> {
     const { base, quote } = parsePair(pair);
     const symbol = this.getPairSymbol(base, quote);
@@ -188,7 +230,7 @@ export class BybitAdapter implements ExchangeAdapter {
     const exec = 'taker';
     const feeAsset = orderSide === 'buy' ? base : quote;
 
-    const standardFeeRates = calculateFeeRates(fees as FeeData, {
+    const standardFeeRates = calculateFeeRates(this.fees, {
       pair,
       exec,
       userTier,
@@ -196,7 +238,7 @@ export class BybitAdapter implements ExchangeAdapter {
       customFees,
     });
 
-    return await this.costCalculator.calculateCost(
+    const breakdown = await this.costCalculator.calculateCost(
       this.name,
       book,
       orderSize,
@@ -206,6 +248,11 @@ export class BybitAdapter implements ExchangeAdapter {
       quote,
       { feeAsset, sizeAsset: orderSizeAsset }
     );
+
+    if (this.isFutures)
+      await attachFunding(breakdown, 'Bybit', symbol, orderSide, holdingPeriodHours);
+
+    return breakdown;
   }
 
   /**

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { EXCHANGE_REGISTRY, type ExchangeId } from '../../exchanges';
-import { ACCOUNT_SETTINGS_STORAGE_KEY } from '../../utils/constants';
+import { getRegistry, type ExchangeId } from '../../exchanges';
+import { accountSettingsStorageKey } from '../../utils/constants';
 import { readJSONFromLocalStorage, writeJSONToLocalStorage } from '../../utils/local-storage';
+import type { MarketType } from '../../core/interfaces/order-book';
 import type { FeeMeta, PerExchangeSettings } from '../types';
 
 /**
@@ -21,24 +22,27 @@ import type { FeeMeta, PerExchangeSettings } from '../types';
  * - Settings are automatically persisted when changed.
  * - Fee metadata is loaded asynchronously on mount.
  */
-export function useExchangeSettings() {
+export function useExchangeSettings(marketType: MarketType = 'spot') {
   const [feeMeta, setFeeMeta] = useState<Partial<Record<ExchangeId, FeeMeta>>>({});
   const [settings, setSettings] = useState<Partial<Record<ExchangeId, PerExchangeSettings>>>({});
+
+  const storageKey = accountSettingsStorageKey(marketType);
 
   useEffect(() => {
     let alive = true;
 
     (async () => {
-      const ids = Object.keys(EXCHANGE_REGISTRY) as ExchangeId[];
+      const registry = getRegistry(marketType);
+      const ids = Object.keys(registry) as ExchangeId[];
       const cached =
-        (readJSONFromLocalStorage(ACCOUNT_SETTINGS_STORAGE_KEY) as Partial<
+        (readJSONFromLocalStorage(storageKey) as Partial<
           Record<ExchangeId, PerExchangeSettings>
         >) ?? {};
 
       const entries = await Promise.all(
         ids.map(async (id) => {
           try {
-            const data = EXCHANGE_REGISTRY[id].getFeeData?.();
+            const data = registry[id]?.getFeeData?.();
 
             const userTiersRaw = Array.isArray(data?.userTiers) ? data!.userTiers : [];
             const userTiers = userTiersRaw.length > 0 ? userTiersRaw : [];
@@ -60,8 +64,8 @@ export function useExchangeSettings() {
       const metaObj = Object.fromEntries(entries) as Record<ExchangeId, FeeMeta>;
       setFeeMeta(metaObj);
 
-      setSettings((prev) => {
-        const next: Partial<Record<ExchangeId, PerExchangeSettings>> = { ...prev };
+      setSettings(() => {
+        const next: Partial<Record<ExchangeId, PerExchangeSettings>> = {};
 
         (Object.keys(metaObj) as ExchangeId[]).forEach((id) => {
           const cachedForEx = cached[id];
@@ -95,12 +99,12 @@ export function useExchangeSettings() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [marketType, storageKey]);
 
   useEffect(() => {
     if (!Object.keys(settings).length) return;
-    writeJSONToLocalStorage(ACCOUNT_SETTINGS_STORAGE_KEY, settings);
-  }, [settings]);
+    writeJSONToLocalStorage(storageKey, settings);
+  }, [settings, storageKey]);
 
   const updateSettings = useCallback(
     (id: ExchangeId, patch: Partial<PerExchangeSettings>) => {

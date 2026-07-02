@@ -265,6 +265,14 @@ export function LiveOrderBook({
   const totalHdr = `Total${base ? ` (${base.toUpperCase()})` : ''}`;
 
   const priceDecimals = Math.max(0, precision ?? 2);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 639px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const h = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', h);
+    return () => mq.removeEventListener('change', h);
+  }, []);
+  const minQtyDecimals = isMobile ? 0 : undefined;
 
   return (
     <div className="px-4 pb-3 text-sm min-w-0 overflow-x-auto">
@@ -309,8 +317,14 @@ export function LiveOrderBook({
                   minDecimals: priceDecimals,
                   maxDecimals: priceDecimals,
                 })}
-                sizeText={cryptoNumberFormat(level.quantity, { compact: true })}
-                totalText={cryptoNumberFormat(cumAmt, { compact: true })}
+                sizeText={cryptoNumberFormat(level.quantity, {
+                  compact: true,
+                  minDecimals: minQtyDecimals,
+                })}
+                totalText={cryptoNumberFormat(cumAmt, {
+                  compact: true,
+                  minDecimals: minQtyDecimals,
+                })}
                 depthPct={depthPct}
               />
             );
@@ -339,8 +353,14 @@ export function LiveOrderBook({
                   minDecimals: priceDecimals,
                   maxDecimals: priceDecimals,
                 })}
-                sizeText={cryptoNumberFormat(level.quantity, { compact: true })}
-                totalText={cryptoNumberFormat(cumAmt, { compact: true })}
+                sizeText={cryptoNumberFormat(level.quantity, {
+                  compact: true,
+                  minDecimals: minQtyDecimals,
+                })}
+                totalText={cryptoNumberFormat(cumAmt, {
+                  compact: true,
+                  minDecimals: minQtyDecimals,
+                })}
                 depthPct={depthPct}
               />
             );

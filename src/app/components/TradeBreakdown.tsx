@@ -1,8 +1,10 @@
 import { AveragePrice } from './AveragePrice';
 import { ExecutionNotional } from './ExecutionNotional';
 import { CommissionFees } from './CommissionFees';
+import { Funding } from './Funding';
 import { Slippage } from './Slippage';
 import { Chevron } from '../icons/Chevron';
+import { isStablecoin } from '../../utils/utils';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
 import type { JSX } from 'react';
 import type { ExchangeId } from '../../exchanges';
@@ -26,6 +28,7 @@ export function TradeBreakdown({
   exchangeId,
   costBreakdownMap,
   precision,
+  pricePrecision,
   feesOpen,
   openInfoKey,
   breakdownOpen,
@@ -36,6 +39,7 @@ export function TradeBreakdown({
   exchangeId: ExchangeId;
   costBreakdownMap: Record<ExchangeId, CostBreakdown>;
   precision?: number;
+  pricePrecision?: number;
   feesOpen: boolean;
   openInfoKey: OpenInfoKey | null;
   breakdownOpen: boolean;
@@ -44,6 +48,8 @@ export function TradeBreakdown({
   setBreakdownOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }): JSX.Element {
   const costBreakdown = costBreakdownMap[exchangeId];
+  // Adaptive (USD-style) formatting for the quote amount columns only makes sense when the quote is a USD stablecoin.
+  const adaptiveQuote = isStablecoin(costBreakdown.quoteAsset);
 
   return (
     <table className="w-full text-sm text-strong table-fixed">
@@ -56,7 +62,7 @@ export function TradeBreakdown({
       <thead>
         <tr className="table-head">
           <th className="text-left py-2 font-medium">
-            <div className="inline-flex items-center gap-1">
+            <div className="inline-flex items-center gap-1 whitespace-nowrap sm:whitespace-normal">
               <span>Trade Breakdown</span>
               <button
                 type="button"
@@ -85,7 +91,7 @@ export function TradeBreakdown({
         <tbody id={`tb-body-${exchangeId}`} className="align-middle">
           <AveragePrice
             costBreakdown={costBreakdown}
-            precision={precision}
+            precision={pricePrecision ?? precision}
             openInfoKey={openInfoKey}
             setOpenInfoKey={setOpenInfoKey}
           />
@@ -93,6 +99,7 @@ export function TradeBreakdown({
           <Slippage
             costBreakdown={costBreakdown}
             precision={precision}
+            adaptiveQuote={adaptiveQuote}
             openInfoKey={openInfoKey}
             setOpenInfoKey={setOpenInfoKey}
           />
@@ -100,6 +107,15 @@ export function TradeBreakdown({
           <ExecutionNotional
             costBreakdown={costBreakdown}
             precision={precision}
+            adaptiveQuote={adaptiveQuote}
+            openInfoKey={openInfoKey}
+            setOpenInfoKey={setOpenInfoKey}
+          />
+
+          <Funding
+            costBreakdown={costBreakdown}
+            precision={precision}
+            adaptiveQuote={adaptiveQuote}
             openInfoKey={openInfoKey}
             setOpenInfoKey={setOpenInfoKey}
           />
@@ -107,6 +123,7 @@ export function TradeBreakdown({
           <CommissionFees
             costBreakdown={costBreakdown}
             precision={precision}
+            adaptiveQuote={adaptiveQuote}
             feesOpen={feesOpen}
             openInfoKey={openInfoKey}
             setFeesOpen={setFeesOpen}

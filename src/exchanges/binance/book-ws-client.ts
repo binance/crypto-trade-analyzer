@@ -27,6 +27,7 @@ type DepthDiff = {
     s: string;
     U: number;
     u: number;
+    pu?: number;
     b: [string, string][];
     a: [string, string][];
   };
@@ -61,6 +62,8 @@ export interface BinanceDepthRestResponse {
  */
 export type BinanceBookClientOptions = {
   socketUrl?: string;
+  restUrl?: string;
+  market?: 'spot' | 'futures';
   streamSpeed?: '100ms' | '1000ms';
   depthLimit?: number;
   emitIntervalMs?: number;
@@ -78,6 +81,39 @@ export class BinanceBookClient implements BookWsClient {
   priceBucket: number | undefined;
 
   constructor(private opts: BinanceBookClientOptions = {}) {}
+
+  /**
+   * Returns true when two consecutive diff events are contiguous, using the
+   * sequencing rule appropriate for the market:
+   * - Spot: `evt.U === prevU + 1`
+   * - Futures: `evt.pu === prevU` (pu = previous update id sent in fstream events)
+   */
+  private isContiguous(evt: DepthDiff['data'], prevU: number): boolean {
+    if (this.opts.market === 'futures') {
+      const pu = evt.pu ?? evt.U - 1;
+      return pu === prevU;
+    }
+
+    return evt.U === prevU + 1;
+  }
+
+  /**
+   * Whether an event predates the REST snapshot and must be discarded.
+   * Spot: drop `u <= lastUpdateId`. Futures: drop `u < lastUpdateId`.
+   */
+  private isStaleVsSnapshot(evt: DepthDiff['data'], lastUpdateId: number): boolean {
+    return this.opts.market === 'futures' ? evt.u < lastUpdateId : evt.u <= lastUpdateId;
+  }
+
+  /**
+   * Whether an event is the valid FIRST event to apply after the snapshot.
+   * Spot: `U <= lastUpdateId+1 AND u >= lastUpdateId+1`.
+   * Futures: `U <= lastUpdateId AND u >= lastUpdateId`.
+   */
+  private isFirstEventValid(evt: DepthDiff['data'], lastUpdateId: number): boolean {
+    const ref = this.opts.market === 'futures' ? lastUpdateId : lastUpdateId + 1;
+    return evt.U <= ref && evt.u >= ref;
+  }
 
   /**
    * Pushes a depth update event to the buffer.
@@ -121,7 +157,7 @@ export class BinanceBookClient implements BookWsClient {
 
     console.debug(`Resyncing order book for Binance ${pairKey}...`);
 
-    const url = `${REST_API_URL}/depth?symbol=${pairKey}&limit=${depthLimit ?? this.opts.depthLimit ?? DEPTH_LIMIT}`;
+    const url = `${this.opts.restUrl ?? REST_API_URL}/depth?symbol=${pairKey}&limit=${depthLimit ?? this.opts.depthLimit ?? DEPTH_LIMIT}`;
     const resp = await withHttpRetry(() => fetch(url), { maxAttempts: 5 });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const bookSnapshot = (await resp.json()) as BinanceDepthRestResponse;
@@ -137,13 +173,9 @@ export class BinanceBookClient implements BookWsClient {
 
     const buf = state.buffer.sort((a, b) => a.U - b.U);
     let i = 0;
-    while (i < buf.length && buf[i].u <= bookSnapshot.lastUpdateId) i++;
+    while (i < buf.length && this.isStaleVsSnapshot(buf[i], bookSnapshot.lastUpdateId)) i++;
 
-    if (
-      i < buf.length &&
-      buf[i].U <= bookSnapshot.lastUpdateId + 1 &&
-      buf[i].u >= bookSnapshot.lastUpdateId + 1
-    ) {
+    if (i < buf.length && this.isFirstEventValid(buf[i], bookSnapshot.lastUpdateId)) {
       let prevU = buf[i].u;
       this.applyEvent(state, buf[i]);
       i++;
@@ -153,7 +185,7 @@ export class BinanceBookClient implements BookWsClient {
 
         if (ev.u <= prevU) continue;
 
-        if (ev.U !== prevU + 1) {
+        if (!this.isContiguous(ev, prevU)) {
           state.buffer = [];
           return this.resync(pairKey, depthLimit);
         }
@@ -193,7 +225,7 @@ export class BinanceBookClient implements BookWsClient {
       }
 
       if (state.lastEventU == null) {
-        if (!(evt.U <= state.lastUpdateId + 1 && evt.u >= state.lastUpdateId + 1)) {
+        if (!this.isFirstEventValid(evt, state.lastUpdateId)) {
           this.pushBuffered(state, evt, pairKey);
           state.syncing = true;
           this.resync(pairKey).catch(() => {});
@@ -201,7 +233,7 @@ export class BinanceBookClient implements BookWsClient {
         }
       } else {
         if (evt.u <= state.lastEventU) return;
-        if (evt.U !== state.lastEventU + 1) {
+        if (!this.isContiguous(evt, state.lastEventU)) {
           this.pushBuffered(state, evt, pairKey);
           state.syncing = true;
           this.resync(pairKey).catch(() => {});
@@ -398,7 +430,7 @@ export class BinanceBookClient implements BookWsClient {
    * @param pairKey The trading pair or key to retrieve the order book for.
    * @returns The order book for the specified trading pair, or undefined if not available.
    */
-  getOrderBook(pairKey: string): OrderBook | undefined {
+  getRawOrderBook(pairKey: string): OrderBook | undefined {
     const state = this.states.get(pairKey);
     if (!state || state.syncing || state.lastUpdateId == null) return;
 
@@ -412,6 +444,18 @@ export class BinanceBookClient implements BookWsClient {
       .map(([p, q]) => ({ price: Number(p), quantity: q }))
       .sort((a, b) => a.price - b.price);
 
-    return bucketizeOrderBook({ bids, asks }, this.priceBucket!);
+    return { bids, asks };
+  }
+
+  /**
+   * Gets the bucketized order book for a trading pair.
+   *
+   * @param pairKey The trading pair or key to retrieve the order book for.
+   * @returns The bucketized order book for the specified trading pair, or undefined if not available.
+   */
+  getOrderBook(pairKey: string): OrderBook | undefined {
+    const raw = this.getRawOrderBook(pairKey);
+    if (!raw) return;
+    return bucketizeOrderBook(raw, this.priceBucket!);
   }
 }

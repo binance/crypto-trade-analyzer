@@ -1,17 +1,21 @@
-import { EXCHANGE_REGISTRY } from '../../exchanges';
-import { withHttpRetry } from '../../utils/utils';
+import { SPOT_REGISTRY, FUTURES_REGISTRY } from '../../exchanges';
+import { withHttpRetry, isStablecoin } from '../../utils/utils';
 import {
   readCacheEntryFromLocalStorage,
   writeCacheEntryToLocalStorage,
   removeKeyFromLocalStorage,
   isFresh,
 } from '../../utils/local-storage';
-import { REST_API_URL as BINANCE_REST_API_URL } from '../../exchanges/binance/utils/constants';
+import type { MarketType } from '../interfaces/order-book';
+import {
+  REST_API_URL as BINANCE_REST_API_URL,
+  FUTURES_REST_API_URL as BINANCE_FUTURES_REST_API_URL,
+} from '../../exchanges/binance/utils/constants';
 import { REST_API_URL as BYBIT_REST_API_URL } from '../../exchanges/bybit/utils/constants';
 import { REST_API_URL as COINBASE_REST_API_URL } from '../../exchanges/coinbase/utils/constants';
 import { REST_API_URL as OKX_REST_API_URL } from '../../exchanges/okx/utils/constants';
 
-const LS_PREFIX = 'pairdir:v1';
+const LS_PREFIX = 'pairdir:v2';
 const PAPRIKA_SLUG: Record<string, string> = {
   Binance: 'binance',
   OKX: 'okx',
@@ -21,7 +25,7 @@ const PAPRIKA_SLUG: Record<string, string> = {
 
 const INFLIGHT_BY_EXCHANGE = new Map<string, Promise<Pair[]>>();
 let INFLIGHT_SYMBOLS: Promise<Map<string, string>> | undefined;
-let INFLIGHT_PAIRS_WITH_EX: Promise<PairWithExchanges[]> | undefined;
+const INFLIGHT_PAIRS_WITH_EX = new Map<MarketType, Promise<PairWithExchanges[]>>();
 
 interface ExchangeMarketResponse {
   category?: string;
@@ -39,6 +43,7 @@ type Fiat = { id: string; symbol: string };
 type Options = {
   cacheTtlMs?: number;
   exchanges?: string[];
+  market?: MarketType;
 };
 
 export type PairWithExchanges = Pair & { exchanges: string[] };
@@ -54,10 +59,13 @@ export class PairDirectory {
 
   private readonly cacheTtlMs: number;
   private readonly exchanges: string[];
+  readonly market: MarketType;
 
   constructor(opts: Options = {}) {
     this.cacheTtlMs = opts.cacheTtlMs ?? 30 * 60 * 1000; // 30 min
-    this.exchanges = opts.exchanges ?? Object.keys(EXCHANGE_REGISTRY);
+    this.market = opts.market ?? 'spot';
+    const defaultRegistry = this.market === 'futures' ? FUTURES_REGISTRY : SPOT_REGISTRY;
+    this.exchanges = opts.exchanges ?? Object.keys(defaultRegistry);
   }
 
   /**
@@ -68,7 +76,7 @@ export class PairDirectory {
    */
   private getLocalStorageKeyPairs(): string {
     const ex = [...this.exchanges].sort().join(',');
-    return `${LS_PREFIX}:pairs:${ex}`;
+    return `${LS_PREFIX}:${this.market}:pairs:${ex}`;
   }
 
   /**
@@ -79,7 +87,7 @@ export class PairDirectory {
    */
   private getLocalStorageKeyPairsWithEx(): string {
     const ex = [...this.exchanges].sort().join(',');
-    return `${LS_PREFIX}:pairsWithEx:${ex}`;
+    return `${LS_PREFIX}:${this.market}:pairsWithEx:${ex}`;
   }
 
   /**
@@ -165,6 +173,35 @@ export class PairDirectory {
       .filter((x): x is Pair => !!x);
   }
 
+  private async fetchBinanceFuturesPairs(): Promise<Pair[]> {
+    const url = `${BINANCE_FUTURES_REST_API_URL}/exchangeInfo`;
+
+    const res = await withHttpRetry(() => fetch(url), { maxAttempts: 5 });
+    if (!res.ok) throw new Error(`Failed to fetch futures markets Binance ${res.status}`);
+
+    const json = (await res.json()) as {
+      symbols?: Array<{
+        status: string;
+        baseAsset: string;
+        quoteAsset: string;
+        contractType: string;
+      }>;
+    };
+
+    return (json.symbols ?? [])
+      .filter(
+        (s) =>
+          String(s.status).toUpperCase() === 'TRADING' &&
+          String(s.contractType).toUpperCase() === 'PERPETUAL'
+      )
+      .map((s) => {
+        const base = s.baseAsset?.toUpperCase();
+        const quote = s.quoteAsset?.toUpperCase();
+        return base && quote ? { base, quote, display: `${base}/${quote}` } : null;
+      })
+      .filter((x): x is Pair => !!x);
+  }
+
   /**
    * Fetches trading pairs from the Bybit exchange API.
    *
@@ -175,6 +212,48 @@ export class PairDirectory {
    * @returns {Promise<Pair[]>} A promise that resolves to an array of standardized trading pairs
    * @throws {Error} If the API request fails or returns a non-200 status code
    */
+  private async fetchBybitLinearPairs(): Promise<Pair[]> {
+    const baseUrl = `${BYBIT_REST_API_URL}/market/instruments-info?category=linear`;
+    const pairs: Pair[] = [];
+
+    let cursor: string | undefined;
+    for (let page = 0; page < 50; page++) {
+      const url = cursor ? `${baseUrl}&cursor=${encodeURIComponent(cursor)}` : baseUrl;
+
+      const res = await withHttpRetry(() => fetch(url), { maxAttempts: 5 });
+      if (!res.ok) throw new Error(`Failed to fetch futures markets Bybit ${res.status}`);
+
+      const json = (await res.json()) as {
+        retCode: number;
+        retMsg: string;
+        result?: {
+          list?: Array<{
+            baseCoin: string;
+            quoteCoin: string;
+            status: string;
+            contractType?: string;
+          }>;
+          nextPageCursor?: string;
+        };
+      };
+
+      const list = json.result?.list ?? [];
+      for (const i of list) {
+        if (String(i.status).toLowerCase() !== 'trading') continue;
+        if (i.contractType && !String(i.contractType).toLowerCase().includes('perpetual')) continue;
+        const base = i.baseCoin?.toUpperCase();
+        const quote = i.quoteCoin?.toUpperCase();
+        if (base && quote) pairs.push({ base, quote, display: `${base}/${quote}` });
+      }
+
+      const next = json.result?.nextPageCursor;
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+
+    return pairs;
+  }
+
   private async fetchBybitPairs(): Promise<Pair[]> {
     const baseUrl = `${BYBIT_REST_API_URL}/market/instruments-info?category=spot`;
     const pairs: Pair[] = [];
@@ -292,6 +371,39 @@ export class PairDirectory {
       .filter((x): x is Pair => !!x);
   }
 
+  private async fetchOKXSwapPairs(): Promise<Pair[]> {
+    const url = `${OKX_REST_API_URL}/public/instruments?instType=SWAP`;
+
+    const res = await withHttpRetry(() => fetch(url), { maxAttempts: 5 });
+    if (!res.ok) throw new Error(`Failed to fetch futures markets OKX ${res.status}`);
+
+    const json = (await res.json()) as {
+      code: string;
+      msg: string;
+      data: Array<{
+        instType: string;
+        instId: string;
+        uly?: string;
+        settleCcy?: string;
+        state: string;
+      }>;
+    };
+
+    return (json.data ?? [])
+      .filter(
+        (i) =>
+          String(i.instType).toUpperCase() === 'SWAP' &&
+          String(i.state).toLowerCase() === 'live' &&
+          ['USDT', 'USDC'].includes(String(i.settleCcy).toUpperCase())
+      )
+      .map((i) => {
+        const underlying = i.uly || i.instId.replace(/-SWAP$/i, '');
+        const [base, quote] = underlying.toUpperCase().split('-');
+        return base && quote ? { base, quote, display: `${base}/${quote}` } : null;
+      })
+      .filter((x): x is Pair => !!x);
+  }
+
   /**
    * Fetch spot markets for an exchange and normalize to ticker pairs via ID→symbol map.
    *
@@ -305,15 +417,18 @@ export class PairDirectory {
     symbols: Map<string, string>
   ): Promise<Pair[]> {
     const id = exchangeId.toLowerCase();
+    const inflightKey = `${this.market}:${id}`;
 
-    const existing = INFLIGHT_BY_EXCHANGE.get(id);
+    const existing = INFLIGHT_BY_EXCHANGE.get(inflightKey);
     if (existing) return existing;
 
     const run = (async (): Promise<Pair[]> => {
+      const isFutures = this.market === 'futures';
+      if (id === 'okx') return isFutures ? this.fetchOKXSwapPairs() : this.fetchOKXPairs();
+      if (id === 'bybit') return isFutures ? this.fetchBybitLinearPairs() : this.fetchBybitPairs();
+      if (id === 'binance')
+        return isFutures ? this.fetchBinanceFuturesPairs() : this.fetchBinancePairs();
       if (id === 'coinbase') return this.fetchCoinbasePairs();
-      if (id === 'okx') return this.fetchOKXPairs();
-      if (id === 'bybit') return this.fetchBybitPairs();
-      if (id === 'binance') return this.fetchBinancePairs();
 
       const slug = PAPRIKA_SLUG[id] ?? id;
       const url = `https://api.coinpaprika.com/v1/exchanges/${slug}/markets`;
@@ -343,12 +458,24 @@ export class PairDirectory {
       return pairs;
     })();
 
-    INFLIGHT_BY_EXCHANGE.set(id, run);
+    INFLIGHT_BY_EXCHANGE.set(inflightKey, run);
     try {
       return await run;
     } finally {
-      INFLIGHT_BY_EXCHANGE.delete(id);
+      INFLIGHT_BY_EXCHANGE.delete(inflightKey);
     }
+  }
+
+  /**
+   * Filter pairs for the current market type (spot or futures).
+   *
+   * @private
+   * @param pairs An array of Pair objects to filter.
+   * @returns An array of Pair objects filtered for the current market type.
+   */
+  private filterForMarket<T extends { quote: string }>(pairs: T[]): T[] {
+    if (this.market !== 'futures') return pairs;
+    return pairs.filter((p) => isStablecoin(p.quote));
   }
 
   /**
@@ -382,7 +509,7 @@ export class PairDirectory {
       return a.quote.localeCompare(b.quote);
     });
 
-    return res;
+    return this.filterForMarket(res);
   }
 
   /**
@@ -422,9 +549,11 @@ export class PairDirectory {
       return cached.data;
     }
 
-    if (INFLIGHT_PAIRS_WITH_EX) return INFLIGHT_PAIRS_WITH_EX;
+    const inflightKey = this.market;
+    const existingInflight = INFLIGHT_PAIRS_WITH_EX.get(inflightKey);
+    if (existingInflight) return existingInflight;
 
-    INFLIGHT_PAIRS_WITH_EX = (async () => {
+    const promise = (async () => {
       const symbols = await this.getSymbolsMap();
 
       const results = await Promise.allSettled(
@@ -447,10 +576,12 @@ export class PairDirectory {
         }
       });
 
-      const arr = Array.from(pairsByDisplay.values()).sort((a, b) => {
+      let arr = Array.from(pairsByDisplay.values()).sort((a, b) => {
         const c = a.base.localeCompare(b.base);
         return c !== 0 ? c : a.quote.localeCompare(b.quote);
       });
+
+      arr = this.filterForMarket(arr);
 
       this.cachePairsWithEx = arr;
       this.cacheWithExTs = now;
@@ -458,10 +589,11 @@ export class PairDirectory {
       return arr;
     })();
 
+    INFLIGHT_PAIRS_WITH_EX.set(inflightKey, promise);
     try {
-      return await INFLIGHT_PAIRS_WITH_EX;
+      return await promise;
     } finally {
-      INFLIGHT_PAIRS_WITH_EX = undefined;
+      INFLIGHT_PAIRS_WITH_EX.delete(inflightKey);
     }
   }
 

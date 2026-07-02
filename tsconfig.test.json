@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "composite": true,
+    "types": ["vitest/globals", "node"],
+    "noEmit": true
+  },
+  "include": ["src/**/*.test.ts", "src/**/*.spec.ts", "src/test/**/*.ts", "vitest.config.ts"]
+}

@@ -1,0 +1,474 @@
+{
+  "exchange": "Bybit",
+  "version": "futures-2026-06-09",
+  "userTiers": [
+    "VIP0",
+    "VIP1",
+    "VIP2",
+    "VIP3",
+    "VIP4",
+    "VIP5",
+    "Supreme VIP",
+    "PRO1",
+    "PRO2",
+    "PRO3",
+    "PRO4",
+    "PRO5",
+    "PRO6"
+  ],
+  "supportsTokenDiscount": false,
+  "schedule": {
+    "name": "usdt-perpetual",
+    "defaultTier": "VIP0",
+    "_comment": "VIP0-Supreme are flat across all symbol groups. PRO1-6 base rows hold GROUP 5 (the default/fallback for any pair not listed in a Group 1-4 modifier, incl. all newly-listed contracts). Group 1-4 modifiers override only the PRO rows for their listed pairs.",
+    "tiers": {
+      "VIP0": {
+        "maker": 0.0002,
+        "taker": 0.00055
+      },
+      "VIP1": {
+        "maker": 0.00018,
+        "taker": 0.0004
+      },
+      "VIP2": {
+        "maker": 0.00016,
+        "taker": 0.000375
+      },
+      "VIP3": {
+        "maker": 0.00014,
+        "taker": 0.00035
+      },
+      "VIP4": {
+        "maker": 0.00012,
+        "taker": 0.00032
+      },
+      "VIP5": {
+        "maker": 0.0001,
+        "taker": 0.00032
+      },
+      "Supreme VIP": {
+        "maker": 0,
+        "taker": 0.0003
+      },
+      "PRO1": {
+        "maker": 0,
+        "taker": 0.00032
+      },
+      "PRO2": {
+        "maker": 0,
+        "taker": 0.00032
+      },
+      "PRO3": {
+        "maker": 0,
+        "taker": 0.00032
+      },
+      "PRO4": {
+        "maker": 0,
+        "taker": 0.00028
+      },
+      "PRO5": {
+        "maker": 0,
+        "taker": 0.00028
+      },
+      "PRO6": {
+        "maker": 0,
+        "taker": 0.00028
+      }
+    }
+  },
+  "modifiers": [
+    {
+      "id": "Group 1 (Major Coins) Pro fees",
+      "notes": ["BTC/ETH/SOL/XRP USDT perps. Pro-tier rates from Bybit Group 1 column."],
+      "match": {
+        "pairs": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"]
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "PRO1": {
+            "maker": 0.0001,
+            "taker": 0.00028
+          },
+          "PRO2": {
+            "maker": 0.00005,
+            "taker": 0.00025
+          },
+          "PRO3": {
+            "maker": 0.000025,
+            "taker": 0.00022
+          },
+          "PRO4": {
+            "maker": 0.00001,
+            "taker": 0.0002
+          },
+          "PRO5": {
+            "maker": 0,
+            "taker": 0.00018
+          },
+          "PRO6": {
+            "maker": 0,
+            "taker": 0.00015
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": false,
+        "withOtherModifiers": false,
+        "exclusive": true
+      }
+    },
+    {
+      "id": "Group 2 (High Growth) Pro fees",
+      "notes": [
+        "Group 2 (High Growth) USDT perps. Pro-tier rates from Bybit Group 2 column. Symbols filtered to live USDT perpetuals only."
+      ],
+      "match": {
+        "pairs": [
+          "1000BONK/USDT",
+          "1000NEIROCTO/USDT",
+          "1000PEPE/USDT",
+          "AAVE/USDT",
+          "ADA/USDT",
+          "ARB/USDT",
+          "AVAX/USDT",
+          "BNB/USDT",
+          "CRV/USDT",
+          "DOGE/USDT",
+          "ENA/USDT",
+          "FARTCOIN/USDT",
+          "GALA/USDT",
+          "GOAT/USDT",
+          "HYPE/USDT",
+          "INIT/USDT",
+          "KAITO/USDT",
+          "LINK/USDT",
+          "LTC/USDT",
+          "MOODENG/USDT",
+          "NEAR/USDT",
+          "ONDO/USDT",
+          "OP/USDT",
+          "PNUT/USDT",
+          "POPCAT/USDT",
+          "SOLAYER/USDT",
+          "SUI/USDT",
+          "TIA/USDT",
+          "TON/USDT",
+          "TRB/USDT",
+          "TRUMP/USDT",
+          "UNI/USDT",
+          "VIRTUAL/USDT",
+          "WCT/USDT",
+          "WIF/USDT",
+          "WLD/USDT"
+        ]
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "PRO1": {
+            "maker": 0.000125,
+            "taker": 0.00032
+          },
+          "PRO2": {
+            "maker": 0.0001,
+            "taker": 0.00032
+          },
+          "PRO3": {
+            "maker": 0.000075,
+            "taker": 0.000275
+          },
+          "PRO4": {
+            "maker": 0.00005,
+            "taker": 0.00024
+          },
+          "PRO5": {
+            "maker": 0.000025,
+            "taker": 0.00021
+          },
+          "PRO6": {
+            "maker": 0,
+            "taker": 0.00018
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": false,
+        "withOtherModifiers": false,
+        "exclusive": true
+      }
+    },
+    {
+      "id": "Group 3 (Mid-Tier Liquidity) Pro fees",
+      "notes": [
+        "Group 3 (Mid-Tier Liquidity) USDT perps. Pro-tier rates from Bybit Group 3 column. Symbols filtered to live USDT perpetuals only."
+      ],
+      "match": {
+        "pairs": [
+          "1000FLOKI/USDT",
+          "1000TURBO/USDT",
+          "AERGO/USDT",
+          "ALGO/USDT",
+          "APE/USDT",
+          "APT/USDT",
+          "ARK/USDT",
+          "ARKM/USDT",
+          "ATOM/USDT",
+          "AUCTION/USDT",
+          "AXS/USDT",
+          "BCH/USDT",
+          "BERA/USDT",
+          "BIGTIME/USDT",
+          "BOME/USDT",
+          "BSV/USDT",
+          "CAKE/USDT",
+          "COMP/USDT",
+          "COW/USDT",
+          "DOT/USDT",
+          "DYDX/USDT",
+          "EIGEN/USDT",
+          "ENS/USDT",
+          "ETC/USDT",
+          "ETHFI/USDT",
+          "FIL/USDT",
+          "GAS/USDT",
+          "GMT/USDT",
+          "GRT/USDT",
+          "HBAR/USDT",
+          "ICP/USDT",
+          "IMX/USDT",
+          "INJ/USDT",
+          "IOTA/USDT",
+          "IP/USDT",
+          "JASMY/USDT",
+          "JTO/USDT",
+          "JUP/USDT",
+          "KAS/USDT",
+          "LDO/USDT",
+          "MAGIC/USDT",
+          "MANA/USDT",
+          "MASK/USDT",
+          "ME/USDT",
+          "MEW/USDT",
+          "MNT/USDT",
+          "MOVE/USDT",
+          "NEO/USDT",
+          "NOT/USDT",
+          "ORDI/USDT",
+          "PAXG/USDT",
+          "PENDLE/USDT",
+          "PENGU/USDT",
+          "PEOPLE/USDT",
+          "POL/USDT",
+          "PYTH/USDT",
+          "RENDER/USDT",
+          "RUNE/USDT",
+          "S/USDT",
+          "SAND/USDT",
+          "SEI/USDT",
+          "SHIB1000/USDT",
+          "STRK/USDT",
+          "STX/USDT",
+          "TAO/USDT",
+          "THETA/USDT",
+          "TRX/USDT",
+          "USUAL/USDT",
+          "VET/USDT",
+          "XAUT/USDT",
+          "XLM/USDT",
+          "XMR/USDT",
+          "XTZ/USDT",
+          "ZK/USDT",
+          "ZRO/USDT"
+        ]
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "PRO1": {
+            "maker": 0.000075,
+            "taker": 0.00028
+          },
+          "PRO2": {
+            "maker": 0.00005,
+            "taker": 0.00028
+          },
+          "PRO3": {
+            "maker": 0,
+            "taker": 0.00026
+          },
+          "PRO4": {
+            "maker": 0,
+            "taker": 0.00024
+          },
+          "PRO5": {
+            "maker": 0,
+            "taker": 0.00021
+          },
+          "PRO6": {
+            "maker": 0,
+            "taker": 0.00018
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": false,
+        "withOtherModifiers": false,
+        "exclusive": true
+      }
+    },
+    {
+      "id": "Group 4 (Mid-Tier Activation) Pro fees",
+      "notes": [
+        "Group 4 (Mid-Tier Activation) USDT perps. Pro-tier rates from Bybit Group 4 column. Symbols filtered to live USDT perpetuals only."
+      ],
+      "match": {
+        "pairs": [
+          "1000000BABYDOGE/USDT",
+          "1000000MOG/USDT",
+          "10000SATS/USDT",
+          "1000CAT/USDT",
+          "1000RATS/USDT",
+          "1000TOSHI/USDT",
+          "ACT/USDT",
+          "AERO/USDT",
+          "AGLD/USDT",
+          "AIOZ/USDT",
+          "AIXBT/USDT",
+          "AKT/USDT",
+          "ALCH/USDT",
+          "ANIME/USDT",
+          "API3/USDT",
+          "AR/USDT",
+          "ARC/USDT",
+          "ATH/USDT",
+          "AVAAI/USDT",
+          "B3/USDT",
+          "BABY/USDT",
+          "BAN/USDT",
+          "BANANA/USDT",
+          "BEAM/USDT",
+          "BIO/USDT",
+          "BLUR/USDT",
+          "BOBA/USDT",
+          "BRETT/USDT",
+          "CARV/USDT",
+          "CATI/USDT",
+          "CELO/USDT",
+          "CETUS/USDT",
+          "CGPT/USDT",
+          "CHILLGUY/USDT",
+          "COOKIE/USDT",
+          "CRO/USDT",
+          "CVC/USDT",
+          "DEEP/USDT",
+          "DRIFT/USDT",
+          "DYM/USDT",
+          "EGLD/USDT",
+          "FIDA/USDT",
+          "FLOW/USDT",
+          "GIGA/USDT",
+          "GODS/USDT",
+          "GRASS/USDT",
+          "GRIFFAIN/USDT",
+          "GUN/USDT",
+          "HIGH/USDT",
+          "HIVE/USDT",
+          "HMSTR/USDT",
+          "HYPER/USDT",
+          "ICX/USDT",
+          "IO/USDT",
+          "KAVA/USDT",
+          "KERNEL/USDT",
+          "KMNO/USDT",
+          "KSM/USDT",
+          "LRC/USDT",
+          "LUMIA/USDT",
+          "MANTA/USDT",
+          "MAVIA/USDT",
+          "MELANIA/USDT",
+          "MEME/USDT",
+          "MERL/USDT",
+          "MOCA/USDT",
+          "MUBARAK/USDT",
+          "NIL/USDT",
+          "NMR/USDT",
+          "ORCA/USDT",
+          "PARTI/USDT",
+          "PIPPIN/USDT",
+          "PIXEL/USDT",
+          "PLUME/USDT",
+          "PORTAL/USDT",
+          "PUFFER/USDT",
+          "PUNDIX/USDT",
+          "RARE/USDT",
+          "RAYDIUM/USDT",
+          "REZ/USDT",
+          "ROSE/USDT",
+          "RSR/USDT",
+          "SAFE/USDT",
+          "SAGA/USDT",
+          "SHELL/USDT",
+          "SIGN/USDT",
+          "SNT/USDT",
+          "SOLV/USDT",
+          "SONIC/USDT",
+          "SPX/USDT",
+          "SSV/USDT",
+          "SUPER/USDT",
+          "SUSHI/USDT",
+          "SWARMS/USDT",
+          "TAIKO/USDT",
+          "TSTBSC/USDT",
+          "VANA/USDT",
+          "VINE/USDT",
+          "W/USDT",
+          "WAL/USDT",
+          "WAVES/USDT",
+          "XAI/USDT",
+          "XCN/USDT",
+          "XVG/USDT",
+          "ZBCN/USDT",
+          "ZEC/USDT",
+          "ZEREBRO/USDT",
+          "ZETA/USDT",
+          "ZORA/USDT"
+        ]
+      },
+      "effect": {
+        "mode": "override_per_tier",
+        "perTier": {
+          "PRO1": {
+            "maker": 0,
+            "taker": 0.0003
+          },
+          "PRO2": {
+            "maker": 0,
+            "taker": 0.0003
+          },
+          "PRO3": {
+            "maker": 0,
+            "taker": 0.0003
+          },
+          "PRO4": {
+            "maker": 0,
+            "taker": 0.00025
+          },
+          "PRO5": {
+            "maker": 0,
+            "taker": 0.00025
+          },
+          "PRO6": {
+            "maker": 0,
+            "taker": 0.00025
+          }
+        }
+      },
+      "stacking": {
+        "withDiscounts": false,
+        "withOtherModifiers": false,
+        "exclusive": true
+      }
+    }
+  ]
+}

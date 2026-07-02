@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { EXCHANGE_REGISTRY, type ExchangeId } from '../../exchanges';
-import type { OrderBook, OrderSide, OrderSizeAsset } from '../../core/interfaces/order-book';
+import { getRegistry, SPOT_REGISTRY, type ExchangeId } from '../../exchanges';
+import type {
+  MarketType,
+  OrderBook,
+  OrderSide,
+  OrderSizeAsset,
+} from '../../core/interfaces/order-book';
 import type { PerExchangeSettings } from '../types';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
 import {
+  bucketizeOrderBook,
+  inferBookTick,
   calculateRankedExchanges,
   calculateSavings,
   mapOrderBook,
@@ -64,6 +71,8 @@ export function useExchangeEngine(params: {
   supportedSet: Set<ExchangeId>;
   settings: Partial<Record<ExchangeId, PerExchangeSettings>>;
   defaultTierByEx?: Partial<Record<ExchangeId, string>>;
+  marketType?: MarketType;
+  holdingPeriodHours?: number;
   paused?: boolean;
   onSelectExchanges?: (next: ExchangeId[]) => void;
 }) {
@@ -76,11 +85,16 @@ export function useExchangeEngine(params: {
     supportedSet,
     settings,
     defaultTierByEx,
+    marketType = 'spot',
+    holdingPeriodHours,
     paused = false,
     onSelectExchanges,
   } = params;
 
-  const allExchangeIds = useMemo(() => Object.keys(EXCHANGE_REGISTRY) as ExchangeId[], []);
+  const allExchangeIds = useMemo(() => Object.keys(SPOT_REGISTRY) as ExchangeId[], []);
+  const marketTypeRef = useRef<MarketType>(marketType);
+  const holdingPeriodHoursRef = useRef<number | undefined>(holdingPeriodHours);
+  const adapterFor = useCallback((id: ExchangeId) => getRegistry(marketTypeRef.current)[id], []);
 
   const makeMap = useCallback(
     <T>(init: T) =>
@@ -107,6 +121,15 @@ export function useExchangeEngine(params: {
     makeMap<Date | undefined>(undefined)
   );
   const [priceBucket, setPriceBucket] = useState<number | undefined>(undefined);
+  // Per-exchange tick used for DISPLAY only (order book + price precision). Equals priceBucket
+  // for normal pairs; for futures tick-mismatch pairs it's each exchange's own native tick.
+  const [displayTickByEx, setDisplayTickByEx] = useState<Record<ExchangeId, number | undefined>>(
+    () => makeMap<number | undefined>(undefined)
+  );
+  // Ref mirror of displayTickByEx so the live-book callback can detect changes without re-subscribing.
+  const displayTickByExRef = useRef<Record<ExchangeId, number | undefined>>(
+    makeMap<number | undefined>(undefined)
+  );
 
   const pairKeyByEx = useRef<Record<ExchangeId, string | null>>(makeMap<string | null>(null));
   const lastBucketByEx = useRef<Record<ExchangeId, number | undefined>>(
@@ -121,6 +144,10 @@ export function useExchangeEngine(params: {
   );
   const recomputeTimers = useRef<Record<ExchangeId, number | null>>(makeMap<number | null>(null));
   const tickCacheRef = useRef<Record<string, number | undefined>>({});
+  // Whether advertised ticks diverge by >= 100× (futures only). When true, each card's display
+  // book is bucketed to the tick inferred from its raw live book instead of the shared maxTick
+  // grid. Cost calc is unaffected — it always uses the shared maxTick.
+  const tickMismatchRef = useRef(false);
   const tradingPairRef = useRef(tradingPair);
   const prevTradingPairRef = useRef<string | undefined>(undefined);
   const sizeRef = useRef(size);
@@ -165,6 +192,101 @@ export function useExchangeEngine(params: {
   const isOnlineRef = useRef(true);
   const recoveringFromOfflineRef = useRef(false);
 
+  type BookValue = (OrderBook & { tradingPair: string }) | undefined;
+  const pendingBooksRef = useRef<Map<ExchangeId, BookValue>>(new Map());
+  const pendingCostRef = useRef<Map<ExchangeId, CostBreakdown | undefined>>(new Map());
+  const pendingErrorsRef = useRef<Map<ExchangeId, string | null>>(new Map());
+  const pendingTsRef = useRef<Map<ExchangeId, Date | undefined>>(new Map());
+  const flushRafRef = useRef<number | null>(null);
+  const flushTimerRef = useRef<number | null>(null);
+
+  const flushPending = useCallback(() => {
+    if (flushRafRef.current != null) {
+      window.cancelAnimationFrame(flushRafRef.current);
+      flushRafRef.current = null;
+    }
+
+    if (flushTimerRef.current != null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+
+    const books = pendingBooksRef.current;
+    const costs = pendingCostRef.current;
+    const errs = pendingErrorsRef.current;
+    const ts = pendingTsRef.current;
+
+    if (books.size) {
+      pendingBooksRef.current = new Map();
+      setBooks((prev) => {
+        const next = { ...prev };
+        books.forEach((v, id) => (next[id] = v));
+        return next;
+      });
+    }
+
+    if (costs.size) {
+      pendingCostRef.current = new Map();
+      setCostBreakdownMap((prev) => {
+        const next = { ...prev };
+        costs.forEach((v, id) => (next[id] = v));
+        return next;
+      });
+    }
+
+    if (errs.size) {
+      pendingErrorsRef.current = new Map();
+      setErrors((prev) => {
+        const next = { ...prev };
+        errs.forEach((v, id) => (next[id] = v));
+        return next;
+      });
+    }
+
+    if (ts.size) {
+      pendingTsRef.current = new Map();
+      setCalcTimestamps((prev) => {
+        const next = { ...prev };
+        ts.forEach((v, id) => (next[id] = v));
+        return next;
+      });
+    }
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushRafRef.current != null || flushTimerRef.current != null) return;
+
+    flushRafRef.current = window.requestAnimationFrame(flushPending);
+    flushTimerRef.current = window.setTimeout(flushPending, 250);
+  }, [flushPending]);
+
+  const queueUiUpdate = useCallback(
+    (
+      id: ExchangeId,
+      update: {
+        book?: BookValue;
+        cost?: CostBreakdown | undefined;
+        error?: string | null;
+        ts?: Date | undefined;
+      }
+    ) => {
+      if ('book' in update) pendingBooksRef.current.set(id, update.book);
+      if ('cost' in update) pendingCostRef.current.set(id, update.cost);
+      if ('error' in update) pendingErrorsRef.current.set(id, update.error ?? null);
+      if ('ts' in update) pendingTsRef.current.set(id, update.ts);
+
+      scheduleFlush();
+    },
+    [scheduleFlush]
+  );
+
+  const dropPendingUi = useCallback((id: ExchangeId) => {
+    pendingBooksRef.current.delete(id);
+    pendingCostRef.current.delete(id);
+    pendingErrorsRef.current.delete(id);
+    pendingTsRef.current.delete(id);
+  }, []);
+
   useEffect(() => {
     prevTradingPairRef.current = tradingPairRef.current;
     tradingPairRef.current = tradingPair;
@@ -197,6 +319,9 @@ export function useExchangeEngine(params: {
     pausedRef.current = paused;
   }, [paused]);
   useEffect(() => {
+    holdingPeriodHoursRef.current = holdingPeriodHours;
+  }, [holdingPeriodHours]);
+  useEffect(() => {
     booksRef.current = books;
   }, [books]);
   useEffect(() => {
@@ -222,7 +347,8 @@ export function useExchangeEngine(params: {
     if (!isPageActiveRef.current) return;
     if (downSinceRef.current[id] != null) return;
     downSinceRef.current[id] = Date.now();
-    if (isPageActiveRef.current) evtExchangeStatus({ exchange: id, status: 'down', reason });
+    if (isPageActiveRef.current)
+      evtExchangeStatus({ exchange: id, status: 'down', reason, market: marketTypeRef.current });
   };
 
   /**
@@ -241,7 +367,13 @@ export function useExchangeEngine(params: {
     const duration = Date.now() - started;
     downSinceRef.current[id] = undefined;
     if (isPageActiveRef.current)
-      evtExchangeStatus({ exchange: id, status: 'up', reason, down_duration_ms: duration });
+      evtExchangeStatus({
+        exchange: id,
+        status: 'up',
+        reason,
+        down_duration_ms: duration,
+        market: marketTypeRef.current,
+      });
     return duration;
   };
 
@@ -254,7 +386,7 @@ export function useExchangeEngine(params: {
   const endSessionWithSummary = (id: ExchangeId, reason: string) => {
     const start = sessionStartRef.current[id];
     if (!start) {
-      if (isPageActiveRef.current) evtExchangeSessionEnd(id, reason);
+      if (isPageActiveRef.current) evtExchangeSessionEnd(id, marketTypeRef.current, reason);
       return;
     }
 
@@ -284,8 +416,9 @@ export function useExchangeEngine(params: {
         downtime_ms: payload.downtime_ms,
         uptime_ratio: payload.uptime_ratio,
         reason,
+        market: marketTypeRef.current,
       });
-      evtExchangeSessionEnd(id, reason);
+      evtExchangeSessionEnd(id, marketTypeRef.current, reason);
     }
 
     sessionStartRef.current[id] = undefined;
@@ -307,25 +440,34 @@ export function useExchangeEngine(params: {
   }, []);
 
   // Clear UI and internal state trackers for an exchange
-  const clearState = useCallback((id: ExchangeId) => {
-    setBooks((prev) => ({ ...prev, [id]: undefined }));
-    setCostBreakdownMap((prev) => ({ ...prev, [id]: undefined }));
-    setErrors((prev) => ({ ...prev, [id]: null }));
-    setCalcTimestamps((prev) => ({ ...prev, [id]: undefined }));
-    lastBookUpdateAtRef.current[id] = undefined;
-    calcStartedAtRef.current[id] = undefined;
-    upDownLatchRef.current[id] = undefined;
-    firstDataDeadlineRef.current[id] = undefined;
-  }, []);
+  const clearState = useCallback(
+    (id: ExchangeId) => {
+      dropPendingUi(id);
+      costBreakdownMapRef.current = { ...costBreakdownMapRef.current, [id]: undefined };
+      errorsRef.current = { ...errorsRef.current, [id]: null };
+      setBooks((prev) => ({ ...prev, [id]: undefined }));
+      setCostBreakdownMap((prev) => ({ ...prev, [id]: undefined }));
+      setErrors((prev) => ({ ...prev, [id]: null }));
+      setCalcTimestamps((prev) => ({ ...prev, [id]: undefined }));
+      lastBookUpdateAtRef.current[id] = undefined;
+      calcStartedAtRef.current[id] = undefined;
+      upDownLatchRef.current[id] = undefined;
+      firstDataDeadlineRef.current[id] = undefined;
+    },
+    [dropPendingUi]
+  );
 
   // Call adapter's unwatch method safely
-  const unwatchWithPairKey = useCallback((id: ExchangeId) => {
-    try {
-      EXCHANGE_REGISTRY[id].unwatchLivePair?.();
-    } catch (e) {
-      console.warn(`Error during unwatchLivePair for ${id}:`, e);
-    }
-  }, []);
+  const unwatchWithPairKey = useCallback(
+    (id: ExchangeId) => {
+      try {
+        adapterFor(id)?.unwatchLivePair?.();
+      } catch (e) {
+        console.warn(`Error during unwatchLivePair for ${id}:`, e);
+      }
+    },
+    [adapterFor]
+  );
 
   // Disconnect cleanly, only during deselection or unsupported exchange. Does NOT disconnect on trading pair changes.
   const disconnectExchange = useCallback(
@@ -356,7 +498,7 @@ export function useExchangeEngine(params: {
 
         // Disconnect full socket
         try {
-          EXCHANGE_REGISTRY[id].disconnect!();
+          adapterFor(id)?.disconnect?.();
         } catch (e) {
           console.warn(`Error during disconnect for ${id}:`, e);
         }
@@ -368,7 +510,7 @@ export function useExchangeEngine(params: {
         isDisconnectingRef.current[id] = false;
       }
     },
-    [bumpSeq, clearTimers, clearState]
+    [bumpSeq, clearTimers, clearState, adapterFor]
   );
 
   // Debounce and schedule cost recalculation
@@ -399,7 +541,8 @@ export function useExchangeEngine(params: {
       if (!supportedSetRef.current.has(id)) return;
       if (subsRef.current[id]) return;
 
-      const adapter = EXCHANGE_REGISTRY[id];
+      const adapter = adapterFor(id);
+      if (!adapter) return;
       subsRef.current[id] = adapter.onLiveBook((pairKey: string, book: OrderBook) => {
         if (pairKeyByEx.current[id] !== pairKey || pausedRef.current) return;
         liveReadyRef.current[id] = true;
@@ -417,15 +560,36 @@ export function useExchangeEngine(params: {
           }
         }
 
-        setBooks((prev) => ({
-          ...prev,
-          [id]: { ...mapOrderBook(book), tradingPair: tradingPairRef.current },
-        }));
+        // For futures pairs with a large tick mismatch, the shared maxTick grid collapses finer
+        // books into a few levels AND makes the simulated fill land on a coarse, inaccurate price.
+        // Infer the book's true granularity from its raw price spacing (the advertised PRICE_FILTER
+        // tick can be misleading — e.g. Binance fapi reports 0.10 for XLMUSDT while the book trades
+        // at 0.00001) and apply it to BOTH the display and the cost grid, so Avg Price / Spend /
+        // Receive reflect the real book. The fine ticks across venues are effectively identical, so
+        // the cross-exchange comparison stays fair.
+        let displayBook = book;
+        if (tickMismatchRef.current) {
+          const rawBook = adapter.getRawOrderBook(pairKey);
+          const inferredTick = rawBook ? inferBookTick(rawBook) : undefined;
+          if (rawBook && inferredTick && inferredTick > 0) {
+            displayBook = bucketizeOrderBook(rawBook, inferredTick);
+            if (displayTickByExRef.current[id] !== inferredTick) {
+              displayTickByExRef.current[id] = inferredTick;
+              setDisplayTickByEx((prev) => ({ ...prev, [id]: inferredTick }));
+              // Re-grid the cost calc to the same real tick so the next calculateCost is accurate.
+              adapter.setPriceBucket(inferredTick);
+            }
+          }
+        }
+
+        queueUiUpdate(id, {
+          book: { ...mapOrderBook(displayBook), tradingPair: tradingPairRef.current },
+        });
 
         scheduleRecompute(id);
       });
     },
-    [scheduleRecompute]
+    [scheduleRecompute, adapterFor, queueUiUpdate]
   );
 
   /**
@@ -482,7 +646,8 @@ export function useExchangeEngine(params: {
         )
           return;
 
-        const adapter = EXCHANGE_REGISTRY[id];
+        const adapter = adapterFor(id);
+        if (!adapter) return;
         const nextKey = adapter.getPairSymbol(base, quote);
         const prevKey = pairKeyByEx.current[id];
         const prevBucket = lastBucketByEx.current[id];
@@ -526,7 +691,7 @@ export function useExchangeEngine(params: {
         if (!sessionStartRef.current[id]) {
           sessionStartRef.current[id] = Date.now();
           sessionDowntimeAccRef.current[id] = 0;
-          if (isPageActiveRef.current) evtExchangeSessionStart(id);
+          if (isPageActiveRef.current) evtExchangeSessionStart(id, marketTypeRef.current);
         }
 
         // Set a deadline for first data to arrive, else mark as error
@@ -535,7 +700,7 @@ export function useExchangeEngine(params: {
         setErrors((prev) => ({ ...prev, [id]: null }));
       });
     },
-    [bumpSeq, clearState, enqueueWatchOperation, unwatchWithPairKey]
+    [bumpSeq, clearState, enqueueWatchOperation, unwatchWithPairKey, adapterFor]
   );
 
   // Soft reconnect for stale books: keep session but reset WS + state
@@ -566,7 +731,7 @@ export function useExchangeEngine(params: {
         }
 
         try {
-          await EXCHANGE_REGISTRY[id].disconnect!();
+          await adapterFor(id)?.disconnect?.();
         } catch (e) {
           console.warn(`Error during disconnect for stale ${id}:`, e);
         }
@@ -596,7 +761,7 @@ export function useExchangeEngine(params: {
         isDisconnectingRef.current[id] = false;
       }
     },
-    [bumpSeq, clearState, clearTimers, ensureSubscribed, unwatchWithPairKey, watchPair]
+    [bumpSeq, clearState, clearTimers, ensureSubscribed, unwatchWithPairKey, watchPair, adapterFor]
   );
 
   // ON PAGE INACTIVE → set page as inactive
@@ -696,8 +861,50 @@ export function useExchangeEngine(params: {
         void disconnectExchange(id);
       });
       Object.values(timersSnapshot).forEach((t) => t != null && window.clearTimeout(t));
+
+      if (flushRafRef.current != null) window.cancelAnimationFrame(flushRafRef.current);
+      if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current);
     };
   }, [allExchangeIds, disconnectExchange]);
+
+  useEffect(() => {
+    if (marketTypeRef.current === marketType) return;
+
+    const prevMarket = marketTypeRef.current;
+    const prevRegistry = getRegistry(prevMarket);
+
+    allExchangeIds.forEach((id) => {
+      endSessionWithSummary(id, 'market_changed');
+      endExchangeDowntimeTracking(id, 'market_changed');
+      clearTimers(id);
+
+      if (subsRef.current[id]) {
+        try {
+          subsRef.current[id]!();
+        } catch (e) {
+          console.warn(`Error unsubscribing UI listener for ${id} on market change:`, e);
+        }
+        subsRef.current[id] = null;
+      }
+
+      try {
+        prevRegistry[id]?.disconnect?.();
+      } catch (e) {
+        console.warn(`Error disconnecting ${id} on market change:`, e);
+      }
+
+      bumpSeq(id);
+      pairKeyByEx.current[id] = null;
+      lastBucketByEx.current[id] = undefined;
+      liveReadyRef.current[id] = false;
+      clearState(id);
+    });
+
+    tickCacheRef.current = {};
+    setPriceBucket(undefined);
+
+    marketTypeRef.current = marketType;
+  }, [marketType, allExchangeIds, bumpSeq, clearTimers, clearState]);
 
   // DESELECT → hard disconnect; SELECT → only if supported
   useEffect(() => {
@@ -756,7 +963,8 @@ export function useExchangeEngine(params: {
       const { base, quote } = parsePair(tradingPair);
       const eligible = selected.filter((id) => supportedSetRef.current.has(id));
 
-      if (isPageActiveRef.current) evtTradingPairSelected(tradingPair, base, quote);
+      if (isPageActiveRef.current)
+        evtTradingPairSelected(tradingPair, base, quote, marketTypeRef.current);
 
       if (eligible.length === 0) {
         if (active) setPriceBucket(undefined);
@@ -765,11 +973,11 @@ export function useExchangeEngine(params: {
 
       const results = await Promise.allSettled(
         eligible.map(async (id) => {
-          const cacheKey = `${id}:${base}/${quote}`;
+          const cacheKey = `${marketTypeRef.current}:${id}:${base}/${quote}`;
           const cached = tickCacheRef.current[cacheKey];
           if (cached && cached > 0) return cached;
 
-          const t = await EXCHANGE_REGISTRY[id].getTickSize?.(`${base}/${quote}`);
+          const t = await adapterFor(id)?.getTickSize?.(`${base}/${quote}`);
           if (t && t > 0) tickCacheRef.current[cacheKey] = t;
           return t ?? 0;
         })
@@ -778,6 +986,27 @@ export function useExchangeEngine(params: {
 
       const ticks = results.map((r) => (r.status === 'fulfilled' ? (r.value ?? 0) : 0));
       const maxTick = ticks.reduce((m, t) => (t > m ? t : m), 0);
+
+      // Detect futures tick mismatch (advertised max/min ratio >= 100). When mismatched, the live
+      // book is shown at its inferred real granularity (computed per-update in the onLiveBook
+      // callback) instead of the shared maxTick grid. Spot and well-matched pairs keep maxTick.
+      const positiveTicks = ticks.filter((t) => t > 0);
+      const minTick = positiveTicks.length > 0 ? Math.min(...positiveTicks) : 0;
+      const mismatch =
+        marketTypeRef.current === 'futures' && minTick > 0 && maxTick / minTick >= 100;
+      tickMismatchRef.current = mismatch;
+
+      // Seed display tick = shared maxTick grid. For mismatch pairs the callback overrides each
+      // card with the tick inferred from its live book once data arrives.
+      const seed = {} as Record<ExchangeId, number | undefined>;
+      eligible.forEach((id) => {
+        seed[id] = maxTick || undefined;
+      });
+      displayTickByExRef.current = mismatch
+        ? ({} as Record<ExchangeId, number | undefined>)
+        : { ...seed };
+      setDisplayTickByEx(seed);
+
       setPriceBucket(maxTick || undefined);
     };
 
@@ -786,11 +1015,11 @@ export function useExchangeEngine(params: {
     return () => {
       active = false;
     };
-  }, [tradingPair, selected, supportedSet]);
+  }, [tradingPair, selected, supportedSet, marketType, adapterFor]);
 
   // TRADING PAIR or SELECTED changes → open 10s windows, reset freshness map and emit exchanges_selected
   useEffect(() => {
-    if (isPageActiveRef.current) evtExchangesSelected(selected ?? []);
+    if (isPageActiveRef.current) evtExchangesSelected(selected ?? [], marketTypeRef.current);
 
     const deadline = Date.now() + 10000;
     const next: Record<ExchangeId, number> = {} as Record<ExchangeId, number>;
@@ -888,7 +1117,7 @@ export function useExchangeEngine(params: {
         void calculateCost(id);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size, sizeAsset, side, settings, selected, supportedSet]);
+  }, [size, sizeAsset, side, settings, selected, supportedSet, holdingPeriodHours]);
 
   // PAUSED changes → if unpausing, recalculate costs for all selected supported exchanges
   useEffect(() => {
@@ -909,8 +1138,13 @@ export function useExchangeEngine(params: {
   // TRADING PAIR changes → reset caches, price bucket, lastBucketByEx
   useEffect(() => {
     tickCacheRef.current = {};
+    tickMismatchRef.current = false;
+    displayTickByExRef.current = {} as Record<ExchangeId, number | undefined>;
     setPriceBucket(undefined);
-    allExchangeIds.forEach((id) => (lastBucketByEx.current[id] = undefined));
+    setDisplayTickByEx({} as Record<ExchangeId, number | undefined>);
+    allExchangeIds.forEach((id) => {
+      lastBucketByEx.current[id] = undefined;
+    });
   }, [tradingPair, allExchangeIds]);
 
   // TRADING PAIR changes → auto-select supported exchanges if none selected
@@ -1027,7 +1261,8 @@ export function useExchangeEngine(params: {
     if (!pairKey) return;
     if (!liveReadyRef.current[id]) return;
 
-    const adapter = EXCHANGE_REGISTRY[id];
+    const adapter = adapterFor(id);
+    if (!adapter) return;
     if (!tradingPairRef.current) return;
 
     const { base, quote } = parsePair(tradingPairRef.current);
@@ -1039,7 +1274,11 @@ export function useExchangeEngine(params: {
     try {
       const lastAt = lastBookUpdateAtRef.current[id];
       if (typeof lastAt === 'number' && isPageActiveRef.current)
-        evtOrderbookPushLatencyMs(id, Math.max(0, Math.floor(Date.now() - lastAt)));
+        evtOrderbookPushLatencyMs(
+          id,
+          Math.max(0, Math.floor(Date.now() - lastAt)),
+          marketTypeRef.current
+        );
 
       const startAt = calcStartedAtRef.current[id] ?? Date.now();
 
@@ -1051,15 +1290,17 @@ export function useExchangeEngine(params: {
         userTier,
         tokenDiscount: wantsDiscount,
         customFees,
+        holdingPeriodHours: holdingPeriodHoursRef.current,
       });
 
       const finishedAt = Date.now();
 
-      setCostBreakdownMap((prev) => ({ ...prev, [id]: breakdown }));
-      setCalcTimestamps((prev) => ({ ...prev, [id]: new Date(finishedAt) }));
-      setErrors((prev) => ({ ...prev, [id]: null }));
+      costBreakdownMapRef.current = { ...costBreakdownMapRef.current, [id]: breakdown };
+      errorsRef.current = { ...errorsRef.current, [id]: null };
+      queueUiUpdate(id, { cost: breakdown, error: null, ts: new Date(finishedAt) });
 
-      if (isPageActiveRef.current) evtCalcLatencyMs(id, Math.max(0, finishedAt - startAt));
+      if (isPageActiveRef.current)
+        evtCalcLatencyMs(id, Math.max(0, finishedAt - startAt), marketTypeRef.current);
 
       const currentSelected = selectedRef.current.slice();
       const mapNow = { ...costBreakdownMapRef.current, [id]: breakdown };
@@ -1121,18 +1362,18 @@ export function useExchangeEngine(params: {
             binanceComparator: comparator,
             binanceWinningPct: bestNow === BINANCE_ID ? binanceVsComparatorPct : 0,
             binanceLosingPct: bestNow !== BINANCE_ID ? binanceVsComparatorPct : 0,
+            market: marketTypeRef.current,
           });
       }
     } catch (e: unknown) {
       console.warn(`Failed to calculate cost for ${id}:`, e);
-      setCostBreakdownMap((prev) => ({ ...prev, [id]: undefined }));
-      setErrors((prev) => ({
-        ...prev,
-        [id]:
-          typeof e === 'object' && e !== null && 'message' in e
-            ? String((e as { message?: unknown }).message)
-            : String(e),
-      }));
+      const message =
+        typeof e === 'object' && e !== null && 'message' in e
+          ? String((e as { message?: unknown }).message)
+          : String(e);
+      costBreakdownMapRef.current = { ...costBreakdownMapRef.current, [id]: undefined };
+      errorsRef.current = { ...errorsRef.current, [id]: message };
+      queueUiUpdate(id, { cost: undefined, error: message });
     } finally {
       calcStartedAtRef.current[id] = undefined;
     }
@@ -1159,5 +1400,6 @@ export function useExchangeEngine(params: {
     rankedExchanges,
     calcTimestamps,
     priceBucket,
+    displayTickByEx,
   };
 }

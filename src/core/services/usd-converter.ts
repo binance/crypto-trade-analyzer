@@ -1,6 +1,5 @@
-import { STABLECOINS } from '../../utils/constants';
 import { Decimal } from '../../utils/decimal';
-import { withHttpRetry } from '../../utils/utils';
+import { withHttpRetry, isStablecoin } from '../../utils/utils';
 import {
   readCacheEntryFromLocalStorage,
   writeCacheEntryToLocalStorage,
@@ -180,7 +179,7 @@ export class USDConverter {
   async convert(asset: string, amount: Decimal): Promise<Decimal> {
     const symbol = asset.toUpperCase();
 
-    if (STABLECOINS.has(symbol)) return amount;
+    if (isStablecoin(symbol)) return amount;
 
     const now = Date.now();
 

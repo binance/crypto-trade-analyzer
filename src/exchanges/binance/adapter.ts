@@ -1,10 +1,22 @@
-import fees from './fees.v2025-08-22.json';
+import spotFees from './fees.v2025-08-22.json';
+import futuresFees from './fees.futures.v2026-06-09.json';
+import { attachFunding } from '../../core/services/funding-rate';
 import { bucketizeOrderBook, parsePair, withHttpRetry } from '../../utils/utils';
 import { calculateFeeRates } from '../../core/services/fee-rates';
 import { BinanceBookClient } from './book-ws-client';
-import { REST_API_URL } from './utils/constants';
+import {
+  FUTURES_REST_API_URL,
+  FUTURES_SOCKET_URL,
+  FUTURES_DEPTH_LIMIT,
+  REST_API_URL,
+} from './utils/constants';
 import type { ExchangeAdapter } from '../../core/interfaces/exchange-adapter';
-import type { OrderBook, OrderSide, OrderSizeAsset } from '../../core/interfaces/order-book';
+import type {
+  MarketType,
+  OrderBook,
+  OrderSide,
+  OrderSizeAsset,
+} from '../../core/interfaces/order-book';
 import type { CostBreakdown, FeeData } from '../../core/interfaces/fee-config';
 import type { CostCalculator } from '../../core/services/cost-calculator';
 import type { BinanceDepthRestResponse } from './book-ws-client';
@@ -14,10 +26,28 @@ export class BinanceAdapter implements ExchangeAdapter {
   private bookWs: BinanceBookClient;
   private tickCache = new Map<string, number>();
   private currentPair?: string;
+  private fees: FeeData;
+  private restApiUrl: string;
+
   priceBucket?: number;
 
-  constructor(private costCalculator: CostCalculator) {
-    this.bookWs = new BinanceBookClient();
+  constructor(
+    private costCalculator: CostCalculator,
+    private market: MarketType = 'spot'
+  ) {
+    const isFutures = market === 'futures';
+    this.fees = (isFutures ? futuresFees : spotFees) as FeeData;
+    this.restApiUrl = isFutures ? FUTURES_REST_API_URL : REST_API_URL;
+    this.bookWs = new BinanceBookClient(
+      isFutures
+        ? {
+            market: 'futures',
+            socketUrl: FUTURES_SOCKET_URL,
+            restUrl: FUTURES_REST_API_URL,
+            depthLimit: FUTURES_DEPTH_LIMIT,
+          }
+        : {}
+    );
   }
 
   /**
@@ -28,10 +58,13 @@ export class BinanceAdapter implements ExchangeAdapter {
    * @param limit - The maximum number of order book entries to retrieve.
    * @returns A promise that resolves to the order book data.
    */
-  private async fetchOrderBook(symbol: string, limit = 5000): Promise<OrderBook> {
+  private async fetchOrderBook(
+    symbol: string,
+    limit = this.market === 'spot' ? 5000 : FUTURES_DEPTH_LIMIT
+  ): Promise<OrderBook> {
     console.debug(`Fetching order book for ${symbol} from Binance REST API...`);
 
-    const url = `${REST_API_URL}/depth?symbol=${symbol}&limit=${limit}`;
+    const url = `${this.restApiUrl}/depth?symbol=${symbol}&limit=${limit}`;
     const response = await withHttpRetry(() => fetch(url), {
       maxAttempts: 5,
       baseDelayMs: 300,
@@ -74,7 +107,7 @@ export class BinanceAdapter implements ExchangeAdapter {
    * @returns The fee data object.
    */
   getFeeData(): FeeData {
-    return fees as FeeData;
+    return this.fees;
   }
 
   /**
@@ -121,6 +154,27 @@ export class BinanceAdapter implements ExchangeAdapter {
   }
 
   /**
+   * Retrieves the raw order book for a given trading pair from the WebSocket client.
+   *
+   * @param pairKey - The trading pair key (e.g., "BTC-USDT").
+   * @returns The raw order book for the specified trading pair, or undefined if not available.
+   */
+  getRawOrderBook(pairKey: string): OrderBook | undefined {
+    return this.bookWs.getRawOrderBook(pairKey);
+  }
+
+  /**
+   * Sets the price bucket size for the order book. This will affect how the order book data is aggregated and presented.
+   *
+   * @param tick - The price bucket size (tick size) to set. If `undefined`, the order book will not be bucketized.
+   * @returns void
+   */
+  setPriceBucket(tick: number | undefined): void {
+    this.priceBucket = tick;
+    this.bookWs.priceBucket = tick;
+  }
+
+  /**
    * Retrieves the tick size for a given trading pair from Binance.
    *
    * The tick size represents the minimum price movement for the specified pair.
@@ -138,12 +192,13 @@ export class BinanceAdapter implements ExchangeAdapter {
     const cached = this.tickCache.get(symbol);
     if (cached) return cached;
 
-    const url = `${REST_API_URL}/exchangeInfo?symbol=${symbol}`;
+    const url = `${this.restApiUrl}/exchangeInfo?symbol=${symbol}`;
     const resp = await withHttpRetry(() => fetch(url), { maxAttempts: 3 });
     if (!resp.ok) return undefined;
 
     const data = await resp.json();
-    const priceFilter = data?.symbols?.[0]?.filters?.find(
+    const sym = data?.symbols?.[0];
+    const priceFilter = sym?.filters?.find(
       (f: { filterType: string; tickSize?: string }) => f.filterType === 'PRICE_FILTER'
     );
     const tick = Number(priceFilter?.tickSize);
@@ -166,6 +221,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     userTier,
     tokenDiscount = false,
     customFees,
+    holdingPeriodHours,
   }: {
     pair: string;
     orderSize: number;
@@ -174,6 +230,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     userTier?: string;
     tokenDiscount?: boolean;
     customFees?: number;
+    holdingPeriodHours?: number;
   }): Promise<CostBreakdown> {
     const { base, quote } = parsePair(pair);
     const symbol = this.getPairSymbol(base, quote);
@@ -189,7 +246,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     const exec = 'taker';
     const feeAsset = orderSide === 'buy' ? base : quote;
 
-    const standardFeeRates = calculateFeeRates(fees as FeeData, {
+    const standardFeeRates = calculateFeeRates(this.fees, {
       pair,
       exec,
       userTier,
@@ -197,7 +254,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       customFees,
     });
 
-    return await this.costCalculator.calculateCost(
+    const breakdown = await this.costCalculator.calculateCost(
       this.name,
       book,
       orderSize,
@@ -212,7 +269,7 @@ export class BinanceAdapter implements ExchangeAdapter {
           tokenDiscount && {
             feeScenario: {
               feeAsset: 'BNB',
-              feeRates: calculateFeeRates(fees as FeeData, {
+              feeRates: calculateFeeRates(this.fees, {
                 pair,
                 exec,
                 userTier,
@@ -223,6 +280,11 @@ export class BinanceAdapter implements ExchangeAdapter {
           }),
       }
     );
+
+    if (this.market === 'futures')
+      await attachFunding(breakdown, 'Binance', symbol, orderSide, holdingPeriodHours);
+
+    return breakdown;
   }
 
   /**

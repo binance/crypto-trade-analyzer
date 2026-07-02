@@ -22,6 +22,7 @@ export type TimeUnitStyle = 'full' | 'abbr' | 'short' | 'narrow';
 export type OpenInfoKey =
   | 'Avg Price'
   | 'Fees'
+  | 'Funding'
   | 'Notional'
   | 'Receive'
   | 'Spend'

@@ -19,11 +19,13 @@ import type { OpenInfoKey } from '../types';
 export function ExecutionNotional({
   costBreakdown,
   precision,
+  adaptiveQuote = false,
   openInfoKey,
   setOpenInfoKey,
 }: {
   costBreakdown: CostBreakdown;
   precision?: number;
+  adaptiveQuote?: boolean;
   openInfoKey: OpenInfoKey | null;
   setOpenInfoKey: React.Dispatch<React.SetStateAction<OpenInfoKey | null>>;
 }): JSX.Element {
@@ -38,14 +40,16 @@ export function ExecutionNotional({
         </td>
         <td className="py-2 text-right font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">
           <span className="block text-right tabular font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">
-            {cryptoNumberFormat(costBreakdown.execution.amount, {
-              ...(precision && {
-                minDecimals: precision > 2 ? precision : 2,
-                maxDecimals: precision,
-                minSig: precision,
-                maxSig: precision,
-              }),
-            })}
+            {adaptiveQuote
+              ? fiatNumberFormat(costBreakdown.execution.amount)
+              : cryptoNumberFormat(costBreakdown.execution.amount, {
+                  ...(precision && {
+                    minDecimals: precision > 2 ? precision : 2,
+                    maxDecimals: precision,
+                    minSig: precision,
+                    maxSig: precision,
+                  }),
+                })}
           </span>
         </td>
         <td className="py-2 text-right font-mono tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">
