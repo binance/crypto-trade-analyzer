@@ -13,6 +13,7 @@ import {
   formatTick,
   buildTickOptions,
   computeEffectiveDisplayTick,
+  computeMismatchDisplayTick,
   calculateSavings,
   calculateRankedExchanges,
   getExchangeTradeHref,
@@ -402,6 +403,28 @@ describe('computeEffectiveDisplayTick', () => {
 
   it('uses the raw target when native tick is unknown', () => {
     expect(computeEffectiveDisplayTick(0.01, 0.1, undefined)).toBeCloseTo(0.001, 12);
+  });
+});
+
+describe('computeMismatchDisplayTick', () => {
+  it('returns undefined when no inferred tick is known', () => {
+    expect(computeMismatchDisplayTick(undefined, 1)).toBeUndefined();
+    expect(computeMismatchDisplayTick(0, 10)).toBeUndefined();
+  });
+
+  it('returns the inferred tick unchanged for Auto (multiplier 1)', () => {
+    expect(computeMismatchDisplayTick(0.0001, 1)).toBeCloseTo(0.0001, 12);
+  });
+
+  it('applies coarser multipliers on top of the inferred tick', () => {
+    expect(computeMismatchDisplayTick(0.0001, 10)).toBeCloseTo(0.001, 12);
+    expect(computeMismatchDisplayTick(0.0001, 100)).toBeCloseTo(0.01, 12);
+    expect(computeMismatchDisplayTick(0.0001, 1000)).toBeCloseTo(0.1, 12);
+  });
+
+  it('never returns a display tick finer than the inferred (cost) tick', () => {
+    expect(computeMismatchDisplayTick(0.0001, 0.01)).toBeCloseTo(0.0001, 12);
+    expect(computeMismatchDisplayTick(0.0001, 0.1)).toBeCloseTo(0.0001, 12);
   });
 });
 

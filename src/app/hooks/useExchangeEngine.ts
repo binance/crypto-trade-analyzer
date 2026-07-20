@@ -11,6 +11,7 @@ import type { CostBreakdown } from '../../core/interfaces/fee-config';
 import {
   bucketizeOrderBook,
   computeEffectiveDisplayTick,
+  computeMismatchDisplayTick,
   inferBookTick,
   calculateRankedExchanges,
   calculateSavings,
@@ -153,6 +154,7 @@ export function useExchangeEngine(params: {
     makeMap<number | undefined>(undefined)
   );
   const [minNativeTick, setMinNativeTick] = useState<number | undefined>(undefined);
+  const [tickMismatch, setTickMismatch] = useState(false);
   const nativeTickByExRef = useRef<Record<ExchangeId, number | undefined>>(
     makeMap<number | undefined>(undefined)
   );
@@ -668,13 +670,16 @@ export function useExchangeEngine(params: {
           const rawBook = adapter.getRawOrderBook(pairKey);
           const inferredTick = rawBook ? inferBookTick(rawBook) : undefined;
           if (rawBook && inferredTick && inferredTick > 0) {
-            displayBook = bucketizeOrderBook(rawBook, inferredTick);
-            if (displayTickByExRef.current[id] !== inferredTick) {
-              displayTickByExRef.current[id] = inferredTick;
-              setDisplayTickByEx((prev) => ({ ...prev, [id]: inferredTick }));
-              // Re-grid the cost calc to the same real tick so the next calculateCost is accurate.
-              adapter.setPriceBucket(inferredTick);
+            const displayTick =
+              computeMismatchDisplayTick(inferredTick, displayTickMultiplierRef.current) ??
+              inferredTick;
+            displayBook = bucketizeOrderBook(rawBook, displayTick);
+            if (displayTickByExRef.current[id] !== displayTick) {
+              displayTickByExRef.current[id] = displayTick;
+              setDisplayTickByEx((prev) => ({ ...prev, [id]: displayTick }));
             }
+            // Re-grid the cost calc to the real inferred tick so the next calculateCost is accurate.
+            adapter.setPriceBucket(inferredTick);
           }
         }
 
@@ -1012,6 +1017,8 @@ export function useExchangeEngine(params: {
     nativeTickByExRef.current = {} as Record<ExchangeId, number | undefined>;
     setPriceBucket(undefined);
     setMinNativeTick(undefined);
+    tickMismatchRef.current = false;
+    setTickMismatch(false);
 
     marketTypeRef.current = marketType;
   }, [marketType, allExchangeIds, bumpSeq, clearTimers, clearState]);
@@ -1113,6 +1120,7 @@ export function useExchangeEngine(params: {
       const mismatch =
         marketTypeRef.current === 'futures' && minTick > 0 && maxTick / minTick >= 100;
       tickMismatchRef.current = mismatch;
+      if (active) setTickMismatch(mismatch);
 
       // Seed display tick = shared maxTick grid. For mismatch pairs the callback overrides each
       // card with the tick inferred from its live book once data arrives.
@@ -1222,8 +1230,6 @@ export function useExchangeEngine(params: {
   }, [priceBucket, selected, supportedSet, watchPair]);
 
   useEffect(() => {
-    if (tickMismatchRef.current) return;
-
     selected
       .filter((id) => supportedSet.has(id))
       .filter((id) => !!pairKeyByEx.current[id])
@@ -1232,7 +1238,16 @@ export function useExchangeEngine(params: {
         const rawBook = adapterFor(id)?.getRawOrderBook(pairKey);
         if (!rawBook) return;
 
-        const effective = effectiveDisplayTick(id);
+        // Mismatch pairs group off each book's inferred real tick; normal pairs off the shared grid.
+        let effective: number | undefined;
+        if (tickMismatchRef.current) {
+          effective = computeMismatchDisplayTick(
+            inferBookTick(rawBook),
+            displayTickMultiplierRef.current
+          );
+        } else {
+          effective = effectiveDisplayTick(id);
+        }
         if (!effective || effective <= 0) return;
 
         displayTickByExRef.current[id] = effective;
@@ -1555,5 +1570,6 @@ export function useExchangeEngine(params: {
     priceBucket,
     displayTickByEx,
     minNativeTick,
+    tickMismatch,
   };
 }

@@ -196,6 +196,7 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
     priceBucket,
     displayTickByEx,
     minNativeTick,
+    tickMismatch,
   } = useExchangeEngine({
     tradingPair,
     size,
@@ -308,13 +309,15 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPerp, selected, supportedSet, bookLatencyByEx]);
 
+  const tickDropdownBase = tickMismatch ? (minNativeTick ?? priceBucket) : priceBucket;
+
   // Effective (user-adjusted) tick used for the shared "Price" precision shown across cards.
-  const effectiveTick = priceBucket ? priceBucket * tickMultiplier : undefined;
+  const effectiveTick = tickDropdownBase ? tickDropdownBase * tickMultiplier : undefined;
   const effectivePrecision = effectiveTick ? countDecimals(effectiveTick) : undefined;
 
   // Finest tick the user may request: don't let the dropdown offer precision below any venue's real
   // native tick (we'd only be padding zeros). minNativeTick is the finest advertised across venues.
-  const finestSelectableTick = minNativeTick ?? priceBucket;
+  const finestSelectableTick = minNativeTick ?? tickDropdownBase;
 
   const handleMarketChange = (next: MarketType) => {
     if (next === marketType) return;
@@ -724,7 +727,7 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
                       ? cardPrecision
                       : Math.max(cardPrecision, effectivePrecision);
                   })()}
-                  tickBaseTick={priceBucket}
+                  tickBaseTick={tickDropdownBase}
                   tickFinestTick={finestSelectableTick}
                   tickValue={tickMultiplier}
                   onTickChange={setTickMultiplier}

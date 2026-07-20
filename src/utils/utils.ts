@@ -532,6 +532,28 @@ export function computeEffectiveDisplayTick(
 }
 
 /**
+ * Computes the DISPLAY tick for a futures tick-mismatch pair, where the shared advertised grid is
+ * unusable (e.g. Binance fapi advertises 0.10 for ADAUSDT while the book trades at ~0.0001) and each
+ * card must instead group off the tick inferred from its own live book.
+ *
+ * The user's grouping multiplier applies on top of that inferred tick, clamped UP to the inferred
+ * tick itself so finer-than-real only pads zeros. Cost calc stays on the bare inferred tick — this
+ * value is DISPLAY-only, so grouping the book coarser never coarsens Avg Price / Spend / Receive.
+ *
+ * @param inferredTick - The tick inferred from this exchange's raw live book (`inferBookTick`).
+ * @param multiplier - The user's grouping multiplier (1 = Auto).
+ * @returns The effective display tick, or undefined when no inferred tick is known.
+ */
+export function computeMismatchDisplayTick(
+  inferredTick: number | undefined,
+  multiplier: number
+): number | undefined {
+  if (!inferredTick || inferredTick <= 0) return undefined;
+
+  return computeEffectiveDisplayTick(inferredTick, multiplier, inferredTick) ?? inferredTick;
+}
+
+/**
  * Buckets the order book prices into discrete intervals defined by the given tick size.
  *
  * For each side ('bid' or 'ask'), prices are grouped into buckets where each bucket represents
