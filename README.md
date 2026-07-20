@@ -1,23 +1,52 @@
-# Crypto Trade Analyzer
+<p align="center">
+  <img src="public/icon.svg" alt="Crypto Trade Analyzer" width="88" height="88">
+</p>
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/binance/crypto-trade-analyzer/pages.yml)](https://github.com/binance/crypto-trade-analyzer/actions)
-![License](https://img.shields.io/badge/license-Binance%20Source--Available%20v1.0-8854d0)
-[![Open Issues](https://img.shields.io/github/issues/binance/crypto-trade-analyzer)](https://github.com/binance/crypto-trade-analyzer/issues)
-[![GitHub Stars](https://img.shields.io/github/stars/binance/crypto-trade-analyzer?style=social)](https://github.com/binance/crypto-trade-analyzer/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/binance/crypto-trade-analyzer?style=social)](https://github.com/binance/crypto-trade-analyzer/network/members)
+<h1 align="center">Crypto Trade Analyzer</h1>
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-19.1-blue.svg)](https://reactjs.org/)
-[![Vite](https://img.shields.io/badge/Vite-7.1-646CFF.svg)](https://vitejs.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-3.4-38B2AC.svg)](https://tailwindcss.com/)
-[![Code Style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://prettier.io/)
+<p align="center">
+  Identify the most cost-efficient exchange by comparing spend and receive amounts from<br>
+  simulated order execution, using real-time order book data and fees.
+</p>
 
-**Live App:** [https://binance.github.io/crypto-trade-analyzer](https://binance.github.io/crypto-trade-analyzer)
+<p align="center">
+  <a href="https://github.com/binance/crypto-trade-analyzer/actions"><img src="https://img.shields.io/github/actions/workflow/status/binance/crypto-trade-analyzer/pages.yml" alt="Build Status"></a>
+  <img src="https://img.shields.io/badge/license-Binance%20Source--Available%20v1.0-8854d0" alt="License">
+  <a href="https://github.com/binance/crypto-trade-analyzer/issues"><img src="https://img.shields.io/github/issues/binance/crypto-trade-analyzer" alt="Open Issues"></a>
+  <a href="https://github.com/binance/crypto-trade-analyzer/stargazers"><img src="https://img.shields.io/github/stars/binance/crypto-trade-analyzer?style=social" alt="GitHub Stars"></a>
+  <a href="https://github.com/binance/crypto-trade-analyzer/network/members"><img src="https://img.shields.io/github/forks/binance/crypto-trade-analyzer?style=social" alt="GitHub Forks"></a>
+</p>
+
+<p align="center">
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.9-blue.svg" alt="TypeScript"></a>
+  <a href="https://reactjs.org/"><img src="https://img.shields.io/badge/React-19.1-blue.svg" alt="React"></a>
+  <a href="https://vitejs.dev/"><img src="https://img.shields.io/badge/Vite-7.1-646CFF.svg" alt="Vite"></a>
+  <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind%20CSS-3.4-38B2AC.svg" alt="Tailwind CSS"></a>
+  <a href="https://prettier.io/"><img src="https://img.shields.io/badge/code_style-prettier-ff69b4.svg" alt="Code Style: Prettier"></a>
+</p>
+
+<p align="center">
+  <strong>Live App:</strong> <a href="https://binance.github.io/crypto-trade-analyzer">binance.github.io/crypto-trade-analyzer</a>
+</p>
+
+---
 
 > **📋 Important:** Please review our [Product Terms](./PRODUCT_TERMS.md) and [License](./LICENSE) before using this tool.  
 > **📝 Updates:** See the [Changelog](./CHANGELOG.md) for recent changes and version history.
 
-Identify the most cost-efficient exchange by comparing spend and receive amounts from simulated order execution, using real-time order book data and fees.
+## Table of Contents
+
+- [Features](#-features)
+  - [Supported Exchanges](#supported-exchanges)
+- [Installation](#-installation)
+- [Tech Stack](#-tech-stack)
+- [Privacy & Analytics](#-privacy--analytics)
+- [Data Sources & Attribution](#-data-sources--attribution)
+- [Project Structure](#-project-structure)
+- [Contributing](#-contributing)
+- [API Rate Limits](#-api-rate-limits)
+- [Disclaimer](#-disclaimer)
+- [License](#-license)
 
 ## 🚀 Features
 
@@ -85,7 +114,7 @@ npm run lint
 npm run format
 ```
 
-## 🛠️ Tech Stack
+## 🛠 Tech Stack
 
 - **Frontend**: React and TypeScript (Vite)
 - **Styling**: Tailwind CSS
@@ -237,7 +266,7 @@ The application respects exchange API rate limits through:
 - Request throttling for REST API calls
 - Local caching to minimize API requests
 
-## ⚠️ Disclaimer
+## ⚠ Disclaimer
 
 This tool is designed for educational and research purposes. Trading cryptocurrencies involves significant risk, and past performance does not guarantee future results. Always verify costs independently before making trades. Exchange fees and policies may change without notice. You may view the full disclaimer in the [Product Terms](./PRODUCT_TERMS.md).
 

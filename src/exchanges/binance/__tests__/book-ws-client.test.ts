@@ -311,3 +311,67 @@ describe('BinanceBookClient — getRawOrderBook vs getOrderBook', () => {
     expect(client.getRawOrderBook('NOSUCHPAIR')).toBeUndefined();
   });
 });
+
+describe('BinanceBookClient — latency timestamp source', () => {
+  it('emits message output time (E) as exchangeTs, not transaction time (T)', async () => {
+    vi.useFakeTimers();
+    try {
+      const updates: Array<{ exchangeTs?: number; receiveTs?: number }> = [];
+      stubFetchJson(restSnap(1000));
+      const client = makeClient('futures');
+      client.onUpdate((_pair, book) => updates.push(book));
+
+      const p = client.watchPair('BTCUSDT');
+      MockWebSocket.current!.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+      await p;
+
+      const ws = MockWebSocket.current!;
+      ws.feed({
+        stream: 'btcusdt@depth@100ms',
+        data: {
+          e: 'depthUpdate',
+          E: 1_000_000_001_500,
+          T: 1_000_000_000_100,
+          s: 'BTCUSDT',
+          U: 999,
+          u: 1001,
+          pu: 1000,
+          b: [['100', '6']],
+          a: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const last = updates.at(-1)!;
+      expect(last.exchangeTs).toBe(1_000_000_001_500);
+      expect(typeof last.receiveTs).toBe('number');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not set exchangeTs from a REST snapshot resync', async () => {
+    vi.useFakeTimers();
+    try {
+      const updates: Array<{ exchangeTs?: number }> = [];
+      stubFetchJson(restSnap(1000));
+      const client = makeClient('futures');
+      client.onUpdate((_pair, book) => updates.push(book));
+
+      const p = client.watchPair('BTCUSDT');
+      MockWebSocket.current!.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+      await p;
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      for (const upd of updates) {
+        expect(upd.exchangeTs).toBeUndefined();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

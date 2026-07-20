@@ -1,6 +1,7 @@
 import {
   bucketizeOrderBook,
   emitOrderBookUpdate,
+  eventEpochMs,
   sendWsMessage,
   sleep,
   withHttpRetry,
@@ -44,6 +45,8 @@ type BookState = {
   lastEmit: number;
   buffer: OkxBookMsgData[];
   lastTs?: number;
+  latencyExchangeTs?: number;
+  latencyReceiveTs?: number;
   lastSeqId?: number;
   interval?: ReturnType<typeof setInterval>;
 };
@@ -224,6 +227,7 @@ export class OkxBookClient implements BookWsClient {
    */
   private onMessage = (evt: MessageEvent) => {
     try {
+      const receiveTs = eventEpochMs(evt);
       const msg = JSON.parse(evt.data as string) as OkxBooksMsg;
 
       if (msg.event) {
@@ -295,6 +299,8 @@ export class OkxBookClient implements BookWsClient {
         this.applyUpdate(state, datum);
         if (Number.isFinite(seqId)) state.lastSeqId = seqId;
         state.lastTs = messageTs;
+        state.latencyExchangeTs = messageTs;
+        state.latencyReceiveTs = receiveTs;
         state.dirty = true;
         return;
       }
@@ -422,7 +428,13 @@ export class OkxBookClient implements BookWsClient {
         state.lastEmit = Date.now();
 
         const book = this.getOrderBook(stream);
-        if (book) emitOrderBookUpdate(this.listeners, stream, book, 'okx');
+        if (book)
+          emitOrderBookUpdate(
+            this.listeners,
+            stream,
+            { ...book, exchangeTs: state.latencyExchangeTs, receiveTs: state.latencyReceiveTs },
+            'okx'
+          );
       }, this.opts.emitIntervalMs ?? EMIT_INTERVAL_MS);
 
     await this.resync(stream, depthLimit);

@@ -10,12 +10,61 @@ import {
   bucketizeOrderBook,
   inferBookTick,
   countDecimals,
+  formatTick,
+  buildTickOptions,
+  computeEffectiveDisplayTick,
   calculateSavings,
   calculateRankedExchanges,
   getExchangeTradeHref,
   withRetry,
+  eventEpochMs,
+  percentile,
 } from '../utils';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
+
+describe('percentile', () => {
+  it('returns NaN for empty input and the single value for one element', () => {
+    expect(Number.isNaN(percentile([], 0.5))).toBe(true);
+    expect(percentile([42], 0.95)).toBe(42);
+  });
+
+  it('computes the median (p50) with linear interpolation', () => {
+    expect(percentile([1, 2, 3], 0.5)).toBe(2);
+    expect(percentile([1, 2, 3, 4], 0.5)).toBe(2.5);
+  });
+
+  it('does not require sorted input', () => {
+    expect(percentile([3, 1, 2], 0.5)).toBe(2);
+  });
+
+  it('interpolates p95 between straddling ranks', () => {
+    const vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    expect(percentile(vals, 0.95)).toBeCloseTo(10.5, 6);
+  });
+
+  it('clamps p to [0,1] (min and max ranks)', () => {
+    expect(percentile([5, 1, 9], -1)).toBe(1);
+    expect(percentile([5, 1, 9], 2)).toBe(9);
+  });
+});
+
+describe('eventEpochMs', () => {
+  it('converts a DOM event timeStamp to epoch ms via performance.timeOrigin', () => {
+    const evt = { timeStamp: 1234.5 };
+    expect(eventEpochMs(evt)).toBeCloseTo(performance.timeOrigin + 1234.5, 3);
+  });
+
+  it('falls back to a Date.now()-like value when timeStamp is missing or non-positive', () => {
+    const before = Date.now();
+    const got = eventEpochMs({});
+    const after = Date.now();
+    expect(got).toBeGreaterThanOrEqual(before);
+    expect(got).toBeLessThanOrEqual(after);
+
+    const gotZero = eventEpochMs({ timeStamp: 0 });
+    expect(gotZero).toBeGreaterThanOrEqual(before);
+  });
+});
 
 describe('parsePair', () => {
   it('splits slash-delimited pairs', () => {
@@ -272,6 +321,87 @@ describe('countDecimals', () => {
     expect(countDecimals('')).toBe(0);
     expect(countDecimals('.')).toBe(0);
     expect(countDecimals('-')).toBe(0);
+  });
+});
+
+describe('formatTick', () => {
+  it('formats sub-1 ticks without trailing zeros', () => {
+    expect(formatTick(0.0001)).toBe('0.0001');
+    expect(formatTick(0.001)).toBe('0.001');
+    expect(formatTick(0.01)).toBe('0.01');
+    expect(formatTick(0.1)).toBe('0.1');
+  });
+
+  it('formats integer ticks without decimals', () => {
+    expect(formatTick(1)).toBe('1');
+    expect(formatTick(10)).toBe('10');
+  });
+
+  it('returns placeholder for invalid ticks', () => {
+    expect(formatTick(0)).toBe('—');
+    expect(formatTick(-1)).toBe('—');
+    expect(formatTick(NaN)).toBe('—');
+  });
+});
+
+describe('buildTickOptions', () => {
+  it('offers only Auto and coarser when no finer native tick is given', () => {
+    const opts = buildTickOptions(0.01);
+    expect(opts.map((o) => o.value)).toEqual([1, 10, 100, 1000]);
+    // The base multiplier (1) renders as the plain tick value, not an "Auto (...)" label.
+    expect(opts.find((o) => o.value === 1)?.label).toBe('0.01');
+    expect(opts.find((o) => o.value === 10)?.label).toBe('0.1');
+    expect(opts.find((o) => o.value === 100)?.label).toBe('1');
+  });
+
+  it('exposes finer options down to the finest supported native tick', () => {
+    const opts = buildTickOptions(0.01, 0.0001);
+    expect(opts.map((o) => o.value)).toEqual([0.01, 0.1, 1, 10, 100, 1000]);
+    expect(opts.find((o) => o.value === 0.01)?.label).toBe('0.0001');
+    expect(opts.find((o) => o.value === 0.1)?.label).toBe('0.001');
+    expect(opts.find((o) => o.value === 1)?.label).toBe('0.01');
+  });
+
+  it('drops finer options that would go below the finest native tick', () => {
+    const opts = buildTickOptions(0.01, 0.001);
+    expect(opts.some((o) => o.value === 0.1)).toBe(true);
+    expect(opts.some((o) => o.value === 0.01)).toBe(false);
+  });
+
+  it('drops coarse multiples above the sensible max', () => {
+    const opts = buildTickOptions(1000);
+    expect(opts.some((o) => o.value === 1000)).toBe(true);
+  });
+
+  it('returns a single Auto option for invalid base ticks', () => {
+    expect(buildTickOptions(0)).toEqual([{ label: 'Auto', value: 1 }]);
+    expect(buildTickOptions(NaN)).toEqual([{ label: 'Auto', value: 1 }]);
+  });
+});
+
+describe('computeEffectiveDisplayTick', () => {
+  it('returns undefined when no base grid is known', () => {
+    expect(computeEffectiveDisplayTick(undefined, 0.1, 0.0001)).toBeUndefined();
+    expect(computeEffectiveDisplayTick(0, 0.1, 0.0001)).toBeUndefined();
+  });
+
+  it('returns the base tick unchanged for Auto (multiplier 1)', () => {
+    expect(computeEffectiveDisplayTick(0.01, 1, 0.0001)).toBe(0.01);
+    expect(computeEffectiveDisplayTick(0.01, 1, undefined)).toBe(0.01);
+  });
+
+  it('applies coarser multipliers directly (native tick irrelevant when coarsening)', () => {
+    expect(computeEffectiveDisplayTick(0.01, 10, 0.0001)).toBeCloseTo(0.1, 12);
+    expect(computeEffectiveDisplayTick(0.01, 100, 0.0001)).toBeCloseTo(1, 12);
+  });
+
+  it('clamps finer multipliers UP to the exchange native tick', () => {
+    expect(computeEffectiveDisplayTick(0.01, 0.01, 0.0001)).toBeCloseTo(0.0001, 12);
+    expect(computeEffectiveDisplayTick(0.01, 0.01, 0.001)).toBeCloseTo(0.001, 12);
+  });
+
+  it('uses the raw target when native tick is unknown', () => {
+    expect(computeEffectiveDisplayTick(0.01, 0.1, undefined)).toBeCloseTo(0.001, 12);
   });
 });
 

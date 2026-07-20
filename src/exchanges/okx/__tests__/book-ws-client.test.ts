@@ -230,3 +230,52 @@ describe('OkxBookClient — getRawOrderBook vs getOrderBook', () => {
     expect(client.getRawOrderBook('NOSUCHPAIR')).toBeUndefined();
   });
 });
+
+describe('OkxBookClient — latency timestamp source', () => {
+  it('emits book generation time (ts) as exchangeTs, plus a receiveTs', async () => {
+    vi.useFakeTimers();
+    try {
+      const updates: Array<{ exchangeTs?: number; receiveTs?: number }> = [];
+      client.onUpdate((_pair, book) => updates.push(book));
+
+      const p = client.watchPair('BTC-USDT');
+      mockWs = MockWebSocket.current!;
+      mockWs.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+      await p;
+
+      mockWs.feed(snapshot([['100', '1']], [['101', '1']], 1000, -1));
+      mockWs.feed(update([['100', '2']], [], 1001, 1000, 1_000_000_000_500));
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const last = updates.at(-1)!;
+      expect(last.exchangeTs).toBe(1_000_000_000_500);
+      expect(typeof last.receiveTs).toBe('number');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not set exchangeTs from a REST snapshot resync alone', async () => {
+    vi.useFakeTimers();
+    try {
+      const updates: Array<{ exchangeTs?: number }> = [];
+      client.onUpdate((_pair, book) => updates.push(book));
+
+      const p = client.watchPair('BTC-USDT');
+      mockWs = MockWebSocket.current!;
+      mockWs.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+      await p;
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      for (const upd of updates) {
+        expect(upd.exchangeTs).toBeUndefined();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

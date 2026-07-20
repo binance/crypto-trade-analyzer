@@ -1,6 +1,7 @@
 import {
   bucketizeOrderBook,
   emitOrderBookUpdate,
+  eventEpochMs,
   sendWsMessage,
   sleep,
   withHttpRetry,
@@ -24,6 +25,7 @@ type BybitOrderbookMsgData = {
   b: string[][];
   a: string[][];
   ts?: number | string;
+  cts?: number | string;
   u?: number;
   seq?: number;
 };
@@ -34,6 +36,7 @@ type BybitOrderbookMsgData = {
 type BybitOrderbookMsg = {
   topic?: string;
   type?: 'snapshot' | 'delta';
+  ts?: number;
   data?: BybitOrderbookMsgData;
   op?: string;
   success?: boolean;
@@ -57,6 +60,8 @@ type BookState = {
   syncing: boolean;
   lastSeq?: number;
   lastU?: number;
+  latencyExchangeTs?: number;
+  latencyReceiveTs?: number;
   buffer: BufferedDatum[];
   interval?: ReturnType<typeof setInterval>;
 };
@@ -128,6 +133,23 @@ export class BybitBookClient implements BookWsClient {
   private symbolFromTopic(topic?: string): string | undefined {
     if (!topic) return;
     return topic.split('.')[2]?.toUpperCase();
+  }
+
+  /**
+   * Records a live-stream latency sample from a ws message.
+   *
+   * @param state The order book state.
+   * @param msg The parsed ws message.
+   * @param receiveTs Browser receive time (epoch ms) of this message.
+   */
+  private sampleLatency(state: BookState, msg: BybitOrderbookMsg, receiveTs: number) {
+    const ts = Number(msg.ts);
+    const exchangeTs = Number.isFinite(ts) ? ts : Number(msg.data?.cts);
+
+    if (!Number.isFinite(exchangeTs)) return;
+
+    state.latencyExchangeTs = exchangeTs;
+    state.latencyReceiveTs = receiveTs;
   }
 
   /**
@@ -259,6 +281,7 @@ export class BybitBookClient implements BookWsClient {
    */
   private onMessage = (evt: MessageEvent) => {
     try {
+      const receiveTs = eventEpochMs(evt);
       const msg = JSON.parse(evt.data as string) as BybitOrderbookMsg;
 
       if (msg.op && msg.success !== undefined) {
@@ -284,6 +307,7 @@ export class BybitBookClient implements BookWsClient {
 
         if (msg.data.seq != null) state.lastSeq = msg.data.seq;
         if (msg.data.u != null) state.lastU = msg.data.u;
+        this.sampleLatency(state, msg, receiveTs);
 
         this.processBuffer(state, symbol);
 
@@ -319,6 +343,7 @@ export class BybitBookClient implements BookWsClient {
 
         if (msg.data.seq != null) state.lastSeq = msg.data.seq;
         if (u != null) state.lastU = u;
+        this.sampleLatency(state, msg, receiveTs);
 
         state.dirty = true;
         return;
@@ -463,7 +488,13 @@ export class BybitBookClient implements BookWsClient {
         state.lastEmit = Date.now();
 
         const book = this.getOrderBook(normalizedSymbol);
-        if (book) emitOrderBookUpdate(this.listeners, normalizedSymbol, book, 'bybit');
+        if (book)
+          emitOrderBookUpdate(
+            this.listeners,
+            normalizedSymbol,
+            { ...book, exchangeTs: state.latencyExchangeTs, receiveTs: state.latencyReceiveTs },
+            'bybit'
+          );
       }, this.opts.emitIntervalMs ?? EMIT_INTERVAL_MS);
     }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 - 2026-07-20
+
+- Added orderbook tick size adjustment
+- Added bid only and sell only orderbook views.
+- Added live orderbook latency for Futures.
+
 ## 1.2.0 - 2026-07-02
 
 - Added Futures Perpetuals market support.

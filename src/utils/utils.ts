@@ -150,6 +150,54 @@ export function emitOrderBookUpdate(
 }
 
 /**
+ * Converts a DOM event's high-resolution `timeStamp` (measured relative to
+ * `performance.timeOrigin`) into a Unix epoch time in milliseconds.
+ *
+ * Using the event's own timestamp captures when the browser actually received/queued the
+ * message — before our JSON parsing and order-book application — which is more accurate for
+ * latency measurement than calling `Date.now()` inside the handler. Falls back to `Date.now()`
+ * when the event carries no usable timestamp.
+ *
+ * @param evt - The DOM event (e.g. a WebSocket `MessageEvent`).
+ * @returns The event receive time as epoch milliseconds.
+ */
+export function eventEpochMs(evt: { timeStamp?: number }): number {
+  const ts = evt?.timeStamp;
+
+  if (typeof ts === 'number' && Number.isFinite(ts) && ts > 0) return performance.timeOrigin + ts;
+  return Date.now();
+}
+
+/**
+ * Returns the linear-interpolated percentile of a numeric sample.
+ *
+ * Uses the "linear interpolation between closest ranks" method: the rank is `p * (n - 1)`, and
+ * values between the two straddling elements are interpolated. Input need not be sorted. Returns
+ * NaN for an empty sample.
+ *
+ * @param values - The sample values (unsorted is fine).
+ * @param p - Percentile in [0, 1] (e.g. 0.5 for the median, 0.95 for p95).
+ * @returns The interpolated percentile value, or NaN if `values` is empty.
+ */
+export function percentile(values: number[], p: number): number {
+  const n = values.length;
+
+  if (n === 0) return NaN;
+  if (n === 1) return values[0];
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const clampedP = Math.min(1, Math.max(0, p));
+  const rank = clampedP * (n - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+
+  if (lo === hi) return sorted[lo];
+
+  const frac = rank - lo;
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * frac;
+}
+
+/**
  * Sends a message to the WebSocket.
  *
  * @param msg The message object to send.
@@ -395,6 +443,92 @@ export function inferBookTick(book: OrderBook): number | undefined {
 
   // Subtracting floats introduces noise (0.19264 - 0.19263 = 0.00000999999996, not 0.00001).
   return Number(minGap.toPrecision(3));
+}
+
+/**
+ * Formats a tick size for display in the grouping dropdown, trimming trailing zeros while keeping
+ * a readable decimal representation (e.g. 0.0001, 0.01, 1, 10).
+ *
+ * @param tick - The tick size to format.
+ * @returns The formatted tick string.
+ */
+export function formatTick(tick: number): string {
+  if (!Number.isFinite(tick) || tick <= 0) return '—';
+  return cryptoNumberFormat(tick, { minDecimals: 0, maxDecimals: 12, trim: true });
+}
+
+/**
+ * Builds the list of tick-size options for the grouping dropdown, as powers-of-ten multiples of the
+ * auto-computed base tick. A multiplier of 1 is the "Auto" option. Finer multipliers (< 1) increase
+ * display precision (revealing more order book levels where a venue supports them); coarser
+ * multipliers (> 1) merge levels.
+ *
+ * Finer options are clamped so the resulting tick never goes below `finestTick` — the finest native
+ * tick actually supported across the selected venues — since finer than that would only pad zeros.
+ * All options are also kept within a sensible absolute range (1e-8 .. 1e6).
+ *
+ * @param baseTick - The auto-computed base tick (shared coarsest price bucket).
+ * @param finestTick - The finest native tick across selected venues; finer options are dropped below
+ *   this. Defaults to `baseTick` (i.e. no finer-than-auto options) when omitted.
+ * @returns An array of `{ label, value }` where `value` is the multiplier applied to `baseTick`.
+ */
+export function buildTickOptions(
+  baseTick: number,
+  finestTick?: number
+): { label: string; value: number }[] {
+  if (!Number.isFinite(baseTick) || baseTick <= 0) return [{ label: 'Auto', value: 1 }];
+
+  const multipliers = [0.01, 0.1, 1, 10, 100, 1000];
+  const MIN_TICK = 1e-8;
+  const MAX_TICK = 1e6;
+  const EPS = 1e-9;
+
+  const floor = Math.max(
+    MIN_TICK,
+    Number.isFinite(finestTick as number) && (finestTick as number) > 0
+      ? (finestTick as number)
+      : baseTick
+  );
+
+  return multipliers
+    .filter((m) => {
+      const t = baseTick * m;
+
+      if (t > MAX_TICK + EPS) return false;
+      if (m < 1 && t < floor - EPS) return false;
+
+      return true;
+    })
+    .map((m) => ({
+      label: formatTick(baseTick * m),
+      value: m,
+    }));
+}
+
+/**
+ * Computes the effective DISPLAY tick for one exchange given the user's grouping multiplier.
+ *
+ * - Auto (multiplier 1) → the shared coarsest grid (`baseTick`), matching legacy behavior.
+ * - Otherwise → `baseTick × multiplier`, clamped UP to the exchange's own native tick so we never
+ *   render finer precision than the venue actually supports (finer venues reveal real levels;
+ *   coarser venues stay at their native floor and simply zero-pad the extra decimals).
+ *
+ * @param baseTick - The shared coarsest price bucket, or undefined when no grid is known yet.
+ * @param multiplier - The user's grouping multiplier (1 = Auto).
+ * @param nativeTick - The exchange's advertised native tick, if known.
+ * @returns The effective display tick, or undefined when no grid is known.
+ */
+export function computeEffectiveDisplayTick(
+  baseTick: number | undefined,
+  multiplier: number,
+  nativeTick: number | undefined
+): number | undefined {
+  if (!baseTick || baseTick <= 0) return undefined;
+  if (multiplier === 1) return baseTick;
+
+  const target = baseTick * multiplier;
+
+  return nativeTick && nativeTick > 0 ? Math.max(target, nativeTick) : target;
 }
 
 /**

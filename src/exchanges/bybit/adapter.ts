@@ -4,7 +4,7 @@ import { attachFunding } from '../../core/services/funding-rate';
 import { bucketizeOrderBook, parsePair, withHttpRetry } from '../../utils/utils';
 import { calculateFeeRates } from '../../core/services/fee-rates';
 import { BybitBookClient } from './book-ws-client';
-import { REST_API_URL, FUTURES_SOCKET_URL } from './utils/constants';
+import { REST_API_URL, FUTURES_SOCKET_URL, FUTURES_DEPTH_LIMIT } from './utils/constants';
 import type { ExchangeAdapter } from '../../core/interfaces/exchange-adapter';
 import type {
   MarketType,
@@ -34,7 +34,9 @@ export class BybitAdapter implements ExchangeAdapter {
     this.fees = (this.isFutures ? futuresFees : spotFees) as FeeData;
     this.category = this.isFutures ? 'linear' : 'spot';
     this.bookWs = new BybitBookClient(
-      this.isFutures ? { socketUrl: FUTURES_SOCKET_URL, category: 'linear' } : {}
+      this.isFutures
+        ? { socketUrl: FUTURES_SOCKET_URL, category: 'linear', depthLimit: FUTURES_DEPTH_LIMIT }
+        : {}
     );
   }
 
@@ -46,7 +48,10 @@ export class BybitAdapter implements ExchangeAdapter {
    * @param limit - The maximum number of order book entries to retrieve.
    * @returns A promise that resolves to the order book data.
    */
-  private async fetchOrderBook(symbol: string, limit = 1000): Promise<OrderBook> {
+  private async fetchOrderBook(
+    symbol: string,
+    limit = this.isFutures ? FUTURES_DEPTH_LIMIT : 1000
+  ): Promise<OrderBook> {
     console.debug(`Fetching order book for ${symbol} from Bybit REST API...`);
 
     const url = `${REST_API_URL}/market/orderbook?category=${this.category}&symbol=${encodeURIComponent(

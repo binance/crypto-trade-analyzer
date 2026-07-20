@@ -244,7 +244,12 @@ export class OkxAdapter implements ExchangeAdapter {
       price: e.price,
       quantity: e.quantity * ctVal,
     });
-    return { bids: book.bids.map(scale), asks: book.asks.map(scale) };
+    return {
+      bids: book.bids.map(scale),
+      asks: book.asks.map(scale),
+      exchangeTs: book.exchangeTs,
+      receiveTs: book.receiveTs,
+    };
   }
 
   /**

@@ -7,9 +7,11 @@ import { LiveOrderBook } from './LiveOrderBook';
 import { Results } from './Results';
 import { TradeBreakdown } from './TradeBreakdown';
 import { TimestampDetails } from './TimestampDetails';
+import { LatencyBadge } from './LatencyBadge';
+import type { LatencyStat } from '../hooks/useExchangeEngine';
 import { LIVE_ORDER_BOOK_DEPTH_ROWS } from '../../utils/constants';
 import type { ExchangeId } from '../../exchanges';
-import type { MarketType, OrderBook, OrderSide } from '../../core/interfaces/order-book';
+import type { BookView, MarketType, OrderBook, OrderSide } from '../../core/interfaces/order-book';
 import type { OpenInfoKey, PerExchangeSettings } from '../types';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
 
@@ -106,11 +108,20 @@ export function ExchangeCard({
   costBreakdownMap,
   precision,
   bookPrecision,
+  tickBaseTick,
+  tickFinestTick,
+  tickValue,
+  onTickChange,
+  bookView,
+  onBookViewChange,
   error,
   tradingPair,
   size,
   settings,
   lastCalculationTime,
+  latencyStat,
+  isLowestLatency,
+  latencyLoading,
   paused,
   onChangeSettings,
   className: extraClassName,
@@ -130,11 +141,20 @@ export function ExchangeCard({
   costBreakdownMap: Record<ExchangeId, CostBreakdown>;
   precision?: number;
   bookPrecision?: number;
+  tickBaseTick?: number;
+  tickFinestTick?: number;
+  tickValue?: number;
+  onTickChange?: (m: number) => void;
+  bookView?: BookView;
+  onBookViewChange?: (v: BookView) => void;
   error?: string | null;
   tradingPair: string;
   size: number;
   settings?: PerExchangeSettings;
   lastCalculationTime?: Date;
+  latencyStat?: LatencyStat;
+  isLowestLatency?: boolean;
+  latencyLoading?: boolean;
   paused?: boolean;
   onChangeSettings: (p: Partial<PerExchangeSettings>) => void;
   className?: string;
@@ -155,7 +175,9 @@ export function ExchangeCard({
   const costBreakdown = costBreakdownMap[exchangeId as ExchangeId];
   const { base, quote } = parsePair(tradingPair);
   const tradeHref = getExchangeTradeHref(base, quote, exchangeName, marketType);
-  const idx = Array.from({ length: LIVE_ORDER_BOOK_DEPTH_ROWS }, (_, i) => i);
+  const view = bookView ?? 'both';
+  const depthRows = view === 'both' ? LIVE_ORDER_BOOK_DEPTH_ROWS : LIVE_ORDER_BOOK_DEPTH_ROWS * 2;
+  const idx = Array.from({ length: depthRows }, (_, i) => i);
 
   /**
    * When the trading pair changes, treat it as a fresh, global load:
@@ -326,6 +348,12 @@ export function ExchangeCard({
             quote={quote}
             precision={bookPrecision ?? precision}
             waitingForLiveOrderBook={waitingForLiveOrderBook}
+            viewMode={view}
+            onViewChange={onBookViewChange}
+            tickBaseTick={tickBaseTick}
+            tickFinestTick={tickFinestTick}
+            tickValue={tickValue}
+            onTickChange={onTickChange}
           />
 
           <AccountPreferences
@@ -448,20 +476,38 @@ export function ExchangeCard({
                       setBreakdownOpen={setBreakdownOpen}
                     />
                   </div>
-
-                  <div className="text-xs text-muted mt-2 text-right tabular">
-                    {lastCalculationTime && (
-                      <TimestampDetails
-                        date={lastCalculationTime}
-                        showTimestamp={true}
-                        className="mt-2 block text-sm"
-                      />
-                    )}
-                  </div>
                 </div>
               </>
             )}
           </div>
+
+          {/* Timing footer: data-freshness latency (futures) + last-calc timestamp. Rendered
+              outside the cost block so latency survives cost-calc errors (e.g. insufficient
+              liquidity), which are unrelated to receive latency. Both are timing facts, grouped. */}
+          {!waitingForLiveOrderBook && (marketType === 'futures' || lastCalculationTime) && (
+            <div className="section-subtle timing-footer">
+              <div className="timing-footer-row flex items-center justify-between gap-2 text-muted tabular">
+                {marketType === 'futures' ? (
+                  <span className="shrink-0">
+                    <LatencyBadge
+                      stat={latencyStat}
+                      isLowest={isLowestLatency}
+                      loading={latencyLoading}
+                    />
+                  </span>
+                ) : (
+                  <span aria-hidden="true" />
+                )}
+                {lastCalculationTime && (
+                  <TimestampDetails
+                    date={lastCalculationTime}
+                    showTimestamp={true}
+                    className="whitespace-nowrap text-right"
+                  />
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

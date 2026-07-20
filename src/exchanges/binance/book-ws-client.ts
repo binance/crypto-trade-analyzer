@@ -1,6 +1,7 @@
 import {
   bucketizeOrderBook,
   emitOrderBookUpdate,
+  eventEpochMs,
   sendWsMessage,
   sleep,
   withHttpRetry,
@@ -24,6 +25,7 @@ type DepthDiff = {
   data: {
     e: 'depthUpdate';
     E: number;
+    T?: number;
     s: string;
     U: number;
     u: number;
@@ -40,6 +42,8 @@ type BookState = {
   syncing: boolean;
   lastUpdateId?: number;
   lastEventU?: number;
+  latencyExchangeTs?: number;
+  latencyReceiveTs?: number;
   buffer: DepthDiff['data'][];
   bids: Map<string, number>;
   asks: Map<string, number>;
@@ -53,6 +57,7 @@ type BookState = {
  */
 export interface BinanceDepthRestResponse {
   lastUpdateId: number;
+  T?: number;
   bids: [string, string][];
   asks: [string, string][];
 }
@@ -211,6 +216,7 @@ export class BinanceBookClient implements BookWsClient {
    */
   private onMessage = (msg: MessageEvent) => {
     try {
+      const receiveTs = eventEpochMs(msg);
       const parsedMessage = JSON.parse(msg.data as string) as DepthDiff;
       const evt = parsedMessage.data;
       if (!evt?.s || !evt?.U || !evt?.u) return;
@@ -243,6 +249,13 @@ export class BinanceBookClient implements BookWsClient {
 
       this.applyEvent(state, evt);
       state.lastEventU = evt.u;
+
+      // Live-stream latency sample: pair the message OUTPUT time (E) with the browser receive time of this same message.
+      if (typeof evt.E === 'number') {
+        state.latencyExchangeTs = evt.E;
+        state.latencyReceiveTs = receiveTs;
+      }
+
       state.dirty = true;
     } catch (err) {
       console.warn('Failed to process Binance WebSocket message', err);
@@ -387,7 +400,13 @@ export class BinanceBookClient implements BookWsClient {
         state.lastEmit = Date.now();
 
         const book = this.getOrderBook(pair);
-        if (book) emitOrderBookUpdate(this.listeners, pair, book, 'binance');
+        if (book)
+          emitOrderBookUpdate(
+            this.listeners,
+            pair,
+            { ...book, exchangeTs: state.latencyExchangeTs, receiveTs: state.latencyReceiveTs },
+            'binance'
+          );
       }, this.opts.emitIntervalMs ?? EMIT_INTERVAL_MS);
 
     await this.resync(pair, depthLimit);

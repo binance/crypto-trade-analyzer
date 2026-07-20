@@ -316,6 +316,18 @@
     border-color: rgb(var(--border-base));
   }
 
+  /* Timing footer (latency badge + last-updated timestamp) on one row. The two items together
+     can be wider than a narrow card, so we scale the row's font-size with the card width via a
+     container query: text shrinks on narrow cards and caps at ~12px on wide ones, keeping both
+     on a single line without clipping. `cqi` = 1% of the container's inline size. */
+  .timing-footer {
+    container-type: inline-size;
+  }
+  .timing-footer-row {
+    font-size: clamp(8px, 3.6cqi, 12px);
+    line-height: 1.2;
+  }
+
   /* Info card */
   .info-card {
     @apply rounded-lg p-3;

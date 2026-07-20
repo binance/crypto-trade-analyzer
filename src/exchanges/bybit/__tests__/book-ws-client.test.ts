@@ -15,6 +15,15 @@ function msg(type: 'snapshot' | 'delta', b: string[][], a: string[][], u: number
   };
 }
 
+function tsMsg(type: 'snapshot' | 'delta', u: number, seq: number, outerTs: number, cts?: number) {
+  return {
+    topic: 'orderbook.1000.BTCUSDT',
+    type,
+    ts: outerTs,
+    data: { s: 'BTCUSDT', b: [['100', '1']], a: [['101', '1']], u, seq, cts },
+  };
+}
+
 let client: BybitBookClient;
 let fetchSpy: ReturnType<typeof vi.spyOn>;
 let mockWs: MockWebSocket;
@@ -168,6 +177,71 @@ describe('BybitBookClient — general WS handling', () => {
   it('ignores subscription ack frames', async () => {
     await openAndSubscribe();
     expect(() => mockWs.feed({ op: 'subscribe', success: true, retCode: 0 })).not.toThrow();
+  });
+});
+
+describe('BybitBookClient — latency timestamp source', () => {
+  it('emits outer ts (system data time) as exchangeTs, preferring it over cts', async () => {
+    vi.useFakeTimers();
+    try {
+      const updates: Array<{ exchangeTs?: number; receiveTs?: number }> = [];
+      client.onUpdate((_pair, book) => updates.push(book));
+
+      const p = client.watchPair('BTCUSDT');
+      mockWs = MockWebSocket.current!;
+      mockWs.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+      await p;
+
+      mockWs.feed(tsMsg('snapshot', 500, 1000, 1_000_000_000_000));
+      mockWs.feed(tsMsg('delta', 501, 1001, 1_000_000_000_500, 1_000_000_000_400));
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const last = updates.at(-1)!;
+      expect(last.exchangeTs).toBe(1_000_000_000_500);
+      expect(typeof last.receiveTs).toBe('number');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('falls back to cts when outer ts is absent', async () => {
+    vi.useFakeTimers();
+    try {
+      const updates: Array<{ exchangeTs?: number }> = [];
+      client.onUpdate((_pair, book) => updates.push(book));
+
+      const p = client.watchPair('BTCUSDT');
+      mockWs = MockWebSocket.current!;
+      mockWs.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+      await p;
+
+      mockWs.feed({
+        topic: 'orderbook.1000.BTCUSDT',
+        type: 'snapshot',
+        data: { s: 'BTCUSDT', b: [['100', '1']], a: [['101', '1']], u: 500, seq: 1000 },
+      });
+      mockWs.feed({
+        topic: 'orderbook.1000.BTCUSDT',
+        type: 'delta',
+        data: {
+          s: 'BTCUSDT',
+          b: [['100', '1']],
+          a: [['101', '1']],
+          u: 501,
+          seq: 1001,
+          cts: 1_000_000_000_700,
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(updates.at(-1)!.exchangeTs).toBe(1_000_000_000_700);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

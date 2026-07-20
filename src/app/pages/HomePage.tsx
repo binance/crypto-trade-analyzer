@@ -19,7 +19,7 @@ import { buildShareUrl, parseShareParams } from '../../utils/share-url';
 import { syncGAConsent } from '../../utils/analytics';
 import type { ExchangeId } from '../../exchanges';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
-import type { MarketType, OrderSide } from '../../core/interfaces/order-book';
+import type { BookView, MarketType, OrderSide } from '../../core/interfaces/order-book';
 
 import { Pill } from '../components/Pill';
 import { PairInput } from '../components/PairInput';
@@ -155,6 +155,8 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
   );
   const [stuck, setStuck] = useState(false);
   const [pausedBest, setPausedBest] = useState<ExchangeId | null>(null);
+  const [tickMultiplier, setTickMultiplier] = useState(1); // 1 = Auto.
+  const [bookView, setBookView] = useState<BookView>('both');
 
   const size = Number(sizeStr) || 0;
   const isPerp = marketType === 'futures';
@@ -190,8 +192,10 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
     errors,
     rankedExchanges,
     calcTimestamps,
+    bookLatencyByEx,
     priceBucket,
     displayTickByEx,
+    minNativeTick,
   } = useExchangeEngine({
     tradingPair,
     size,
@@ -204,6 +208,7 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
     marketType,
     holdingPeriodHours,
     paused,
+    displayTickMultiplier: tickMultiplier,
     onSelectExchanges: (next) => {
       setSlots(() => {
         const sorted = [...next].sort((a, b) =>
@@ -222,18 +227,114 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
     [cardOrder]
   );
 
+  const hasValidLatency = (id: ExchangeId) => {
+    const p50 = bookLatencyByEx[id]?.p50;
+    return typeof p50 === 'number' && Number.isFinite(p50) && p50 >= 0;
+  };
+
+  // Whether an exchange currently has a live book for the SELECTED pair.
+  const hasLiveBookForPair = (id: ExchangeId) => {
+    const b = books[id];
+    return (
+      !!b &&
+      b.tradingPair === tradingPair &&
+      ((b.bids?.length ?? 0) > 0 || (b.asks?.length ?? 0) > 0)
+    );
+  };
+
+  // Badges reveal together and LATCH: `latenciesReady` flips false→true exactly once per pair,
+  // then stays true so a transient book drop or a growing "streaming" set can't make them flicker.
+  const [latenciesReady, setLatenciesReady] = useState(false);
+  const latchPairRef = useRef<string | undefined>(undefined);
+  const latchDeadlineRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!isPerp) {
+      setLatenciesReady(false);
+      latchPairRef.current = undefined;
+      return;
+    }
+
+    // New pair → hide badges and open a fresh reveal window.
+    if (latchPairRef.current !== tradingPair) {
+      latchPairRef.current = tradingPair;
+      latchDeadlineRef.current = Date.now() + 12000;
+      setLatenciesReady(false);
+    }
+
+    const evaluate = () => {
+      const expected = selected.filter((id) => supportedSet.has(id));
+      if (expected.length === 0) return false;
+
+      const allReady = expected.every((id) => hasLiveBookForPair(id) && hasValidLatency(id));
+      if (allReady) return true;
+
+      // Fallback: after the deadline, reveal if at least one venue has a real reading, so a
+      // permanently-silent venue doesn't hold the others hostage.
+      const pastDeadline = Date.now() >= latchDeadlineRef.current;
+      return pastDeadline && expected.some((id) => hasLiveBookForPair(id) && hasValidLatency(id));
+    };
+
+    if (evaluate()) {
+      setLatenciesReady(true);
+      return;
+    }
+
+    // Not ready yet — poll until the set completes or the deadline lets a partial set through.
+    const t = window.setInterval(() => {
+      if (evaluate()) {
+        setLatenciesReady(true);
+        window.clearInterval(t);
+      }
+    }, 150);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPerp, tradingPair, selected, supportedSet, books, bookLatencyByEx]);
+
+  // Exchange with the lowest valid latency among selected + supported venues.
+  const lowestLatencyId = useMemo(() => {
+    if (!isPerp) return undefined;
+    let best: ExchangeId | undefined;
+    let bestMs = Infinity;
+    for (const id of selected) {
+      if (!supportedSet.has(id) || !hasValidLatency(id)) continue;
+      const ms = bookLatencyByEx[id]!.p50;
+      if (ms < bestMs) {
+        bestMs = ms;
+        best = id;
+      }
+    }
+    return best;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPerp, selected, supportedSet, bookLatencyByEx]);
+
+  // Effective (user-adjusted) tick used for the shared "Price" precision shown across cards.
+  const effectiveTick = priceBucket ? priceBucket * tickMultiplier : undefined;
+  const effectivePrecision = effectiveTick ? countDecimals(effectiveTick) : undefined;
+
+  // Finest tick the user may request: don't let the dropdown offer precision below any venue's real
+  // native tick (we'd only be padding zeros). minNativeTick is the finest advertised across venues.
+  const finestSelectableTick = minNativeTick ?? priceBucket;
+
   const handleMarketChange = (next: MarketType) => {
     if (next === marketType) return;
     setMarketType(next);
     setSlots([null, null, null, null]);
     setPaused(false);
     setPausedBest(null);
+    setTickMultiplier(1);
     didInitRef.current = false;
     if (next === 'futures') {
       const { quote } = parsePair(tradingPair);
       if (!isStablecoin(quote)) setTradingPair(INITIAL_TRADING_PAIRS_LIST[0].tradingPair);
     }
   };
+
+  // Reset grouping to Auto whenever the trading pair or the set of selected exchanges changes —
+  // a tick chosen for one pair/venue set rarely makes sense for another.
+  useEffect(() => {
+    setTickMultiplier(1);
+  }, [tradingPair, selected]);
 
   // Keep the URL in sync with the current view so reloading restores state
   useEffect(() => {
@@ -424,13 +525,15 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-2">
-              <DropdownButton
-                ref={selectorBtnRef}
-                label="Exchanges"
-                open={selectorOpen}
-                onClick={() => setSheetOpen((v) => !v)}
-              />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <DropdownButton
+                  ref={selectorBtnRef}
+                  label="Exchanges"
+                  open={selectorOpen}
+                  onClick={() => setSheetOpen((v) => !v)}
+                />
+              </div>
 
               <div className="h-11 flex items-center">
                 <div className="scale-90">
@@ -612,16 +715,29 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
                   rankedExchanges={rankedExchanges}
                   books={books}
                   costBreakdownMap={costBreakdownMap as Record<ExchangeId, CostBreakdown>}
-                  precision={priceBucket ? countDecimals(priceBucket) : undefined}
+                  precision={effectivePrecision}
                   bookPrecision={(() => {
-                    const tick = (id && displayTickByEx[id]) || priceBucket;
-                    return tick ? countDecimals(tick) : undefined;
+                    const cardTick = (id && displayTickByEx[id]) || effectiveTick;
+                    const cardPrecision = cardTick ? countDecimals(cardTick) : undefined;
+                    if (cardPrecision == null) return effectivePrecision;
+                    return effectivePrecision == null
+                      ? cardPrecision
+                      : Math.max(cardPrecision, effectivePrecision);
                   })()}
+                  tickBaseTick={priceBucket}
+                  tickFinestTick={finestSelectableTick}
+                  tickValue={tickMultiplier}
+                  onTickChange={setTickMultiplier}
+                  bookView={bookView}
+                  onBookViewChange={setBookView}
                   error={err}
                   tradingPair={tradingPair}
                   size={size}
                   settings={isSelected && id ? settings[id] : undefined}
                   lastCalculationTime={lastCalculationTime}
+                  latencyStat={isSelected && id && latenciesReady ? bookLatencyByEx[id] : undefined}
+                  isLowestLatency={isSelected && !!id && latenciesReady && id === lowestLatencyId}
+                  latencyLoading={isSelected && !!id && isPerp && !unsupported && !latenciesReady}
                   paused={paused}
                   onChangeSettings={(p) => {
                     if (!isSelected || !id) return;

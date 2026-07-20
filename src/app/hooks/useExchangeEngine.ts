@@ -10,6 +10,7 @@ import type { PerExchangeSettings } from '../types';
 import type { CostBreakdown } from '../../core/interfaces/fee-config';
 import {
   bucketizeOrderBook,
+  computeEffectiveDisplayTick,
   inferBookTick,
   calculateRankedExchanges,
   calculateSavings,
@@ -29,6 +30,21 @@ import {
   evtExchangeSessionSummary,
 } from '../../utils/analytics';
 import { ORDERBOOK_STALE_MS } from '../../utils/constants';
+import { clockSyncService, type ClockSyncExchange } from '../../core/services/clock-sync';
+import {
+  createLatencyWindow,
+  recordLatencySample,
+  type LatencyStat,
+  type LatencyWindow,
+} from '../../core/services/latency-stats';
+
+export type { LatencyStat };
+
+// Rolling window over which p50/jitter are computed.
+const LATENCY_WINDOW_MS = 20000;
+
+// Hard cap on retained samples per exchange (defensive; ~20 expected at 1/s over 20s).
+const LATENCY_WINDOW_MAX = 64;
 
 /**
  * React hook for managing live order book data, cost calculations, and exchange selection logic
@@ -74,6 +90,7 @@ export function useExchangeEngine(params: {
   marketType?: MarketType;
   holdingPeriodHours?: number;
   paused?: boolean;
+  displayTickMultiplier?: number;
   onSelectExchanges?: (next: ExchangeId[]) => void;
 }) {
   const {
@@ -88,6 +105,7 @@ export function useExchangeEngine(params: {
     marketType = 'spot',
     holdingPeriodHours,
     paused = false,
+    displayTickMultiplier = 1,
     onSelectExchanges,
   } = params;
 
@@ -120,6 +138,10 @@ export function useExchangeEngine(params: {
   const [calcTimestamps, setCalcTimestamps] = useState<Record<ExchangeId, Date | undefined>>(() =>
     makeMap<Date | undefined>(undefined)
   );
+  // Aggregated order-book generation latency per exchange (p50 + jitter over a rolling window).
+  const [bookLatencyByEx, setBookLatencyByEx] = useState<
+    Record<ExchangeId, LatencyStat | undefined>
+  >(() => makeMap<LatencyStat | undefined>(undefined));
   const [priceBucket, setPriceBucket] = useState<number | undefined>(undefined);
   // Per-exchange tick used for DISPLAY only (order book + price precision). Equals priceBucket
   // for normal pairs; for futures tick-mismatch pairs it's each exchange's own native tick.
@@ -130,6 +152,11 @@ export function useExchangeEngine(params: {
   const displayTickByExRef = useRef<Record<ExchangeId, number | undefined>>(
     makeMap<number | undefined>(undefined)
   );
+  const [minNativeTick, setMinNativeTick] = useState<number | undefined>(undefined);
+  const nativeTickByExRef = useRef<Record<ExchangeId, number | undefined>>(
+    makeMap<number | undefined>(undefined)
+  );
+  const displayTickMultiplierRef = useRef<number>(displayTickMultiplier); // 1 = Auto.
 
   const pairKeyByEx = useRef<Record<ExchangeId, string | null>>(makeMap<string | null>(null));
   const lastBucketByEx = useRef<Record<ExchangeId, number | undefined>>(
@@ -197,6 +224,19 @@ export function useExchangeEngine(params: {
   const pendingCostRef = useRef<Map<ExchangeId, CostBreakdown | undefined>>(new Map());
   const pendingErrorsRef = useRef<Map<ExchangeId, string | null>>(new Map());
   const pendingTsRef = useRef<Map<ExchangeId, Date | undefined>>(new Map());
+  const pendingLatencyRef = useRef<Map<ExchangeId, LatencyStat | undefined>>(new Map());
+
+  // Rolling window of recent latency samples per exchange (holds the stale-guard timestamp too).
+  // p50/jitter are computed by recordLatencySample; each key gets its OWN window instance.
+  const latencyWindowRef = useRef<Record<ExchangeId, LatencyWindow>>(
+    allExchangeIds.reduce(
+      (acc, id) => {
+        acc[id] = createLatencyWindow();
+        return acc;
+      },
+      {} as Record<ExchangeId, LatencyWindow>
+    )
+  );
   const flushRafRef = useRef<number | null>(null);
   const flushTimerRef = useRef<number | null>(null);
 
@@ -215,6 +255,7 @@ export function useExchangeEngine(params: {
     const costs = pendingCostRef.current;
     const errs = pendingErrorsRef.current;
     const ts = pendingTsRef.current;
+    const latency = pendingLatencyRef.current;
 
     if (books.size) {
       pendingBooksRef.current = new Map();
@@ -251,6 +292,15 @@ export function useExchangeEngine(params: {
         return next;
       });
     }
+
+    if (latency.size) {
+      pendingLatencyRef.current = new Map();
+      setBookLatencyByEx((prev) => {
+        const next = { ...prev };
+        latency.forEach((v, id) => (next[id] = v));
+        return next;
+      });
+    }
   }, []);
 
   const scheduleFlush = useCallback(() => {
@@ -268,12 +318,14 @@ export function useExchangeEngine(params: {
         cost?: CostBreakdown | undefined;
         error?: string | null;
         ts?: Date | undefined;
+        latency?: LatencyStat | undefined;
       }
     ) => {
       if ('book' in update) pendingBooksRef.current.set(id, update.book);
       if ('cost' in update) pendingCostRef.current.set(id, update.cost);
       if ('error' in update) pendingErrorsRef.current.set(id, update.error ?? null);
       if ('ts' in update) pendingTsRef.current.set(id, update.ts);
+      if ('latency' in update) pendingLatencyRef.current.set(id, update.latency);
 
       scheduleFlush();
     },
@@ -285,6 +337,7 @@ export function useExchangeEngine(params: {
     pendingCostRef.current.delete(id);
     pendingErrorsRef.current.delete(id);
     pendingTsRef.current.delete(id);
+    pendingLatencyRef.current.delete(id);
   }, []);
 
   useEffect(() => {
@@ -315,6 +368,9 @@ export function useExchangeEngine(params: {
   useEffect(() => {
     priceBucketRef.current = priceBucket;
   }, [priceBucket]);
+  useEffect(() => {
+    displayTickMultiplierRef.current = displayTickMultiplier;
+  }, [displayTickMultiplier]);
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
@@ -449,6 +505,8 @@ export function useExchangeEngine(params: {
       setCostBreakdownMap((prev) => ({ ...prev, [id]: undefined }));
       setErrors((prev) => ({ ...prev, [id]: null }));
       setCalcTimestamps((prev) => ({ ...prev, [id]: undefined }));
+      setBookLatencyByEx((prev) => ({ ...prev, [id]: undefined }));
+      latencyWindowRef.current[id] = createLatencyWindow();
       lastBookUpdateAtRef.current[id] = undefined;
       calcStartedAtRef.current[id] = undefined;
       upDownLatchRef.current[id] = undefined;
@@ -534,6 +592,16 @@ export function useExchangeEngine(params: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const effectiveDisplayTick = useCallback(
+    (id: ExchangeId): number | undefined =>
+      computeEffectiveDisplayTick(
+        priceBucketRef.current,
+        displayTickMultiplierRef.current,
+        nativeTickByExRef.current[id]
+      ),
+    []
+  );
+
   // Ensure subscribed only once per exchange
   const ensureSubscribed = useCallback(
     (id: ExchangeId) => {
@@ -547,8 +615,36 @@ export function useExchangeEngine(params: {
         if (pairKeyByEx.current[id] !== pairKey || pausedRef.current) return;
         liveReadyRef.current[id] = true;
 
-        lastBookUpdateAtRef.current[id] = Date.now();
+        const receivedAt = Date.now();
+        lastBookUpdateAtRef.current[id] = receivedAt;
         const hasBook = (book.bids?.length ?? 0) > 0 || (book.asks?.length ?? 0) > 0;
+
+        // Generation-to-receive latency (futures only). recordLatencySample owns the stale guard
+        // (strictly-advancing exchangeTs), clock correction, rolling window, and p50/jitter.
+        if (hasBook && marketTypeRef.current === 'futures' && typeof book.exchangeTs === 'number') {
+          const clockEx = id as ClockSyncExchange;
+          clockSyncService.ensureFresh(clockEx);
+          const syncInfo = clockSyncService.getSyncInfo(clockEx);
+
+          // Only sample once the venue's clock offset is known.
+          if (syncInfo.synced) {
+            const receiveTs = typeof book.receiveTs === 'number' ? book.receiveTs : receivedAt;
+
+            const stat = recordLatencySample(
+              latencyWindowRef.current[id],
+              {
+                exchangeTs: book.exchangeTs,
+                receiveTs,
+                offsetMs: syncInfo.offsetMs,
+                confidenceMs: syncInfo.confidenceMs,
+                now: receivedAt,
+              },
+              { windowMs: LATENCY_WINDOW_MS, maxSamples: LATENCY_WINDOW_MAX }
+            );
+
+            if (stat) queueUiUpdate(id, { latency: stat });
+          }
+        }
 
         if (hasBook) {
           staleSinceRef.current[id] = undefined;
@@ -582,6 +678,18 @@ export function useExchangeEngine(params: {
           }
         }
 
+        if (!tickMismatchRef.current) {
+          const rawBook = adapter.getRawOrderBook(pairKey);
+          const effective = effectiveDisplayTick(id);
+          if (rawBook && effective && effective > 0) {
+            displayBook = bucketizeOrderBook(rawBook, effective);
+            if (displayTickByExRef.current[id] !== effective) {
+              displayTickByExRef.current[id] = effective;
+              setDisplayTickByEx((prev) => ({ ...prev, [id]: effective }));
+            }
+          }
+        }
+
         queueUiUpdate(id, {
           book: { ...mapOrderBook(displayBook), tradingPair: tradingPairRef.current },
         });
@@ -589,7 +697,7 @@ export function useExchangeEngine(params: {
         scheduleRecompute(id);
       });
     },
-    [scheduleRecompute, adapterFor, queueUiUpdate]
+    [scheduleRecompute, adapterFor, queueUiUpdate, effectiveDisplayTick]
   );
 
   /**
@@ -901,7 +1009,9 @@ export function useExchangeEngine(params: {
     });
 
     tickCacheRef.current = {};
+    nativeTickByExRef.current = {} as Record<ExchangeId, number | undefined>;
     setPriceBucket(undefined);
+    setMinNativeTick(undefined);
 
     marketTypeRef.current = marketType;
   }, [marketType, allExchangeIds, bumpSeq, clearTimers, clearState]);
@@ -986,6 +1096,14 @@ export function useExchangeEngine(params: {
 
       const ticks = results.map((r) => (r.status === 'fulfilled' ? (r.value ?? 0) : 0));
       const maxTick = ticks.reduce((m, t) => (t > m ? t : m), 0);
+
+      const nextNative = {} as Record<ExchangeId, number | undefined>;
+      eligible.forEach((id, i) => {
+        nextNative[id] = ticks[i] > 0 ? ticks[i] : undefined;
+      });
+      nativeTickByExRef.current = nextNative;
+      const positiveNative = ticks.filter((t) => t > 0);
+      if (active) setMinNativeTick(positiveNative.length ? Math.min(...positiveNative) : undefined);
 
       // Detect futures tick mismatch (advertised max/min ratio >= 100). When mismatched, the live
       // book is shown at its inferred real granularity (computed per-update in the onLiveBook
@@ -1103,6 +1221,38 @@ export function useExchangeEngine(params: {
       });
   }, [priceBucket, selected, supportedSet, watchPair]);
 
+  useEffect(() => {
+    if (tickMismatchRef.current) return;
+
+    selected
+      .filter((id) => supportedSet.has(id))
+      .filter((id) => !!pairKeyByEx.current[id])
+      .forEach((id) => {
+        const pairKey = pairKeyByEx.current[id]!;
+        const rawBook = adapterFor(id)?.getRawOrderBook(pairKey);
+        if (!rawBook) return;
+
+        const effective = effectiveDisplayTick(id);
+        if (!effective || effective <= 0) return;
+
+        displayTickByExRef.current[id] = effective;
+        setDisplayTickByEx((prev) => ({ ...prev, [id]: effective }));
+        queueUiUpdate(id, {
+          book: {
+            ...mapOrderBook(bucketizeOrderBook(rawBook, effective)),
+            tradingPair: tradingPairRef.current,
+          },
+        });
+      });
+  }, [
+    displayTickMultiplier,
+    selected,
+    supportedSet,
+    adapterFor,
+    queueUiUpdate,
+    effectiveDisplayTick,
+  ]);
+
   // SIZE, SIDE, SETTINGS changes → recalculate costs for all selected supported exchanges
   useEffect(() => {
     if (pausedRef.current) return;
@@ -1140,7 +1290,9 @@ export function useExchangeEngine(params: {
     tickCacheRef.current = {};
     tickMismatchRef.current = false;
     displayTickByExRef.current = {} as Record<ExchangeId, number | undefined>;
+    nativeTickByExRef.current = {} as Record<ExchangeId, number | undefined>;
     setPriceBucket(undefined);
+    setMinNativeTick(undefined);
     setDisplayTickByEx({} as Record<ExchangeId, number | undefined>);
     allExchangeIds.forEach((id) => {
       lastBucketByEx.current[id] = undefined;
@@ -1399,7 +1551,9 @@ export function useExchangeEngine(params: {
     errors,
     rankedExchanges,
     calcTimestamps,
+    bookLatencyByEx,
     priceBucket,
     displayTickByEx,
+    minNativeTick,
   };
 }

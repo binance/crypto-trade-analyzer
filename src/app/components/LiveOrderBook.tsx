@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react';
 import { LiveOrderBookRow } from './LiveOrderBookRow';
 import { cryptoNumberFormat } from '../../utils/utils';
-import type { OrderBook, OrderBookEntry } from '../../core/interfaces/order-book';
+import type { BookView, OrderBook, OrderBookEntry } from '../../core/interfaces/order-book';
 import { createPortal } from 'react-dom';
 import { useScrollHost } from '../hooks/useScrollHost';
 import { Spacer } from './Spacer';
+import { TickSizeSelect } from './TickSizeSelect';
+import { BookViewToggle } from './BookViewToggle';
 
 /**
  * Finds the nearest scrollable parent element of a given HTML element.
@@ -217,6 +219,12 @@ export function LiveOrderBook({
   quote,
   precision,
   waitingForLiveOrderBook,
+  viewMode = 'both',
+  onViewChange,
+  tickBaseTick,
+  tickFinestTick,
+  tickValue,
+  onTickChange,
 }: {
   book: OrderBook | undefined;
   idx: number[];
@@ -224,6 +232,12 @@ export function LiveOrderBook({
   quote?: string;
   precision?: number;
   waitingForLiveOrderBook: boolean;
+  viewMode?: BookView;
+  onViewChange?: (v: BookView) => void;
+  tickBaseTick?: number;
+  tickFinestTick?: number;
+  tickValue?: number;
+  onTickChange?: (m: number) => void;
 }): JSX.Element {
   const hasBook = !!book && ((book.bids?.length ?? 0) > 0 || (book.asks?.length ?? 0) > 0);
 
@@ -274,8 +288,42 @@ export function LiveOrderBook({
   }, []);
   const minQtyDecimals = isMobile ? 0 : undefined;
 
+  const showAsks = viewMode !== 'bids';
+  const showBids = viewMode !== 'asks';
+
+  const hasToolbar = !!onViewChange || !!onTickChange;
+
   return (
     <div className="px-4 pb-3 text-sm min-w-0 overflow-x-auto">
+      {hasToolbar && (
+        <div className="flex items-center justify-between gap-2 pt-2 pb-3">
+          {onViewChange ? <BookViewToggle value={viewMode} onChange={onViewChange} /> : <span />}
+          {onTickChange && (
+            <TickSizeSelect
+              baseTick={tickBaseTick}
+              finestTick={tickFinestTick}
+              value={tickValue ?? 1}
+              onChange={onTickChange}
+              disabled={tickBaseTick === undefined}
+              widthClass="min-w-24"
+              tip={
+                <div className="max-w-[260px] text-sm leading-snug space-y-2">
+                  <p>
+                    <strong>Tick size</strong> controls the price step in the order book.
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>
+                      Smaller steps show more levels, limited by the exchange&apos;s min tick size.
+                    </li>
+                    <li>Larger steps group levels together.</li>
+                  </ul>
+                  <p className="text-muted">Display only — costs are unchanged.</p>
+                </div>
+              }
+            />
+          )}
+        </div>
+      )}
       <table className="w-full table-fixed text-sm text-strong border-separate border-spacing-y-1">
         <colgroup>
           <col className="w-auto" />
@@ -295,7 +343,7 @@ export function LiveOrderBook({
 
         <tbody>
           {/* Ask */}
-          {!waitingForLiveOrderBook && visAsks.length > 0 && (
+          {showAsks && !waitingForLiveOrderBook && visAsks.length > 0 && (
             <tr aria-hidden="true">
               <td colSpan={3} className="px-1 pt-1">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted">
@@ -305,33 +353,34 @@ export function LiveOrderBook({
             </tr>
           )}
 
-          {visAsks.map((level, i) => {
-            if (waitingForLiveOrderBook || !hasBook) return null;
-            const cumAmt = askCumAmt[i]; // cumulative base
-            const depthPct = (cumAmt / askCumMax) * 100; // normalize to side max
-            return (
-              <LiveOrderBookRow
-                key={`ask-${i}`}
-                side="ask"
-                priceText={cryptoNumberFormat(level.price, {
-                  minDecimals: priceDecimals,
-                  maxDecimals: priceDecimals,
-                })}
-                sizeText={cryptoNumberFormat(level.quantity, {
-                  compact: true,
-                  minDecimals: minQtyDecimals,
-                })}
-                totalText={cryptoNumberFormat(cumAmt, {
-                  compact: true,
-                  minDecimals: minQtyDecimals,
-                })}
-                depthPct={depthPct}
-              />
-            );
-          })}
+          {showAsks &&
+            visAsks.map((level, i) => {
+              if (waitingForLiveOrderBook || !hasBook) return null;
+              const cumAmt = askCumAmt[i]; // cumulative base
+              const depthPct = (cumAmt / askCumMax) * 100; // normalize to side max
+              return (
+                <LiveOrderBookRow
+                  key={`ask-${i}`}
+                  side="ask"
+                  priceText={cryptoNumberFormat(level.price, {
+                    minDecimals: priceDecimals,
+                    maxDecimals: priceDecimals,
+                  })}
+                  sizeText={cryptoNumberFormat(level.quantity, {
+                    compact: true,
+                    minDecimals: minQtyDecimals,
+                  })}
+                  totalText={cryptoNumberFormat(cumAmt, {
+                    compact: true,
+                    minDecimals: minQtyDecimals,
+                  })}
+                  depthPct={depthPct}
+                />
+              );
+            })}
 
           {/* Bid */}
-          {!waitingForLiveOrderBook && visBids.length > 0 && (
+          {showBids && !waitingForLiveOrderBook && visBids.length > 0 && (
             <tr aria-hidden="true">
               <td colSpan={3} className="px-1 pt-1">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted">
@@ -341,30 +390,31 @@ export function LiveOrderBook({
             </tr>
           )}
 
-          {visBids.map((level, i) => {
-            if (waitingForLiveOrderBook || !hasBook) return null;
-            const cumAmt = bidCumAmt[i]; // cumulative base
-            const depthPct = (cumAmt / bidCumMax) * 100; // normalize to side max
-            return (
-              <LiveOrderBookRow
-                key={`bid-${i}`}
-                side="bid"
-                priceText={cryptoNumberFormat(level.price, {
-                  minDecimals: priceDecimals,
-                  maxDecimals: priceDecimals,
-                })}
-                sizeText={cryptoNumberFormat(level.quantity, {
-                  compact: true,
-                  minDecimals: minQtyDecimals,
-                })}
-                totalText={cryptoNumberFormat(cumAmt, {
-                  compact: true,
-                  minDecimals: minQtyDecimals,
-                })}
-                depthPct={depthPct}
-              />
-            );
-          })}
+          {showBids &&
+            visBids.map((level, i) => {
+              if (waitingForLiveOrderBook || !hasBook) return null;
+              const cumAmt = bidCumAmt[i]; // cumulative base
+              const depthPct = (cumAmt / bidCumMax) * 100; // normalize to side max
+              return (
+                <LiveOrderBookRow
+                  key={`bid-${i}`}
+                  side="bid"
+                  priceText={cryptoNumberFormat(level.price, {
+                    minDecimals: priceDecimals,
+                    maxDecimals: priceDecimals,
+                  })}
+                  sizeText={cryptoNumberFormat(level.quantity, {
+                    compact: true,
+                    minDecimals: minQtyDecimals,
+                  })}
+                  totalText={cryptoNumberFormat(cumAmt, {
+                    compact: true,
+                    minDecimals: minQtyDecimals,
+                  })}
+                  depthPct={depthPct}
+                />
+              );
+            })}
         </tbody>
       </table>
     </div>
