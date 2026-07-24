@@ -206,7 +206,7 @@ The tool uses a few public APIs to stay lightweight and up-to-date:
     Using Coinbase’s official endpoint ensures the list of pairs always matches the real, unauthenticated market data API we use elsewhere.
 
 - **USD price equivalents:**
-  We fetch coin to USD conversion rates from **CryptoCompare** and **CoinGecko**.
+  We fetch coin to USD conversion rates from **CoinGecko**.
   Price results are cached for **60s** to reduce API usage and improve responsiveness.
 
 - **Market Signals:**  

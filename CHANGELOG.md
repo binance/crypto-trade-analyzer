@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1 - 2026-07-24
+
+- Removed CryptoCompare as a price source for USD conversion due to API limitation.
+
 ## 1.3.0 - 2026-07-20
 
 - Added orderbook tick size adjustment

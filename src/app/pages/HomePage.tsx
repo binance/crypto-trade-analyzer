@@ -755,7 +755,7 @@ function MainApp({ initialSide }: { initialSide: OrderSide }): JSX.Element {
         {/* Footer */}
         <div className="mt-8 pb-8 text-xs text-muted">
           Live order books and fees via exchanges’ public APIs • Pair data and USD conversions via
-          CoinPaprika, CryptoCompare, and CoinGecko APIs. •{' '}
+          CoinPaprika and CoinGecko APIs. •{' '}
           <Link
             className="underline"
             to="https://github.com/binance/crypto-trade-analyzer"
